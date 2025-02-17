@@ -1,214 +1,222 @@
 import os
 import logging
-import chainlit as cl
-from dotenv import load_dotenv
-
-# For Pinecone
+import streamlit as st
 import pinecone
-from pinecone.grpc import PineconeGRPC as PC  # only if you're using the GRPC approach
-
-# For SambaNova (OpenAI-compatible)
-from openai import AsyncOpenAI
-
-# For plotting a bar chart
+import openai
 import matplotlib.pyplot as plt
-import io
 import base64
+import io
 
-#############################################################################
-# 1) ENVIRONMENT SETUP
-#############################################################################
-load_dotenv()  # If local .env; on HF Spaces, use os.environ directly
-
+###############################################################################
+# 1) ENVIRONMENT & PINECONE SETUP
+###############################################################################
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "")
 PINECONE_ENV = os.environ.get("PINECONE_ENV", "")
 SAMBANOVA_API_KEY = os.environ.get("SAMBANOVA_API_KEY", "")
 
-# Pinecone init
-if PINECONE_API_KEY and PINECONE_ENV:
-    pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENV)
-else:
-    logging.warning("Pinecone credentials not found. Make sure they're set in environment variables.")
+# Initialize Pinecone the way you do in your code.
+# (NOT the standard python client usage—assuming your local version supports pc.inference.)
+pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENV)
 
-# The two indexes we need
+# Indices
 USDA_INDEX_NAME = "usda-food-data"
 CHEM_INDEX_NAME = "food-chemicals"
 
-# Check if they exist in your Pinecone project
-existing_indexes = pinecone.list_indexes()
-if USDA_INDEX_NAME not in existing_indexes:
-    logging.warning(f"Index '{USDA_INDEX_NAME}' not found.")
-if CHEM_INDEX_NAME not in existing_indexes:
-    logging.warning(f"Index '{CHEM_INDEX_NAME}' not found.")
+# Attempt connecting to indexes
+try:
+    existing_indexes = pinecone.list_indexes()
+    if USDA_INDEX_NAME not in existing_indexes:
+        logging.warning(f"Index '{USDA_INDEX_NAME}' not found in Pinecone.")
+    if CHEM_INDEX_NAME not in existing_indexes:
+        logging.warning(f"Index '{CHEM_INDEX_NAME}' not found in Pinecone.")
 
-usda_index = pinecone.Index(USDA_INDEX_NAME) if USDA_INDEX_NAME in existing_indexes else None
-chem_index = pinecone.Index(CHEM_INDEX_NAME) if CHEM_INDEX_NAME in existing_indexes else None
+    usda_index = pinecone.Index(USDA_INDEX_NAME) if USDA_INDEX_NAME in existing_indexes else None
+    chem_index = pinecone.Index(CHEM_INDEX_NAME) if CHEM_INDEX_NAME in existing_indexes else None
+except Exception as e:
+    logging.error(f"Error initializing Pinecone: {e}")
+    usda_index = None
+    chem_index = None
 
-#############################################################################
-# 2) HELPER FUNCTIONS
-#############################################################################
-def embed_e5(queries):
+###############################################################################
+# 2) EMBEDDING & PINECONE SEARCH (Your style: pc.inference.embed(...))
+###############################################################################
+def embed_query(query_text: str):
     """
-    Use Pinecone's gRPC-based 'inference.embed' with the 'multilingual-e5-large' model.
-    Adjust if you're using the standard Python client instead of gRPC.
+    Use your Pinecone inference approach. 
+    Example from your code snippet:
+    query_embedding = pc.inference.embed(
+        model="multilingual-e5-large",
+        inputs=[query_text],
+        parameters={"input_type": "query"}
+    )
+    Then return query_embedding[0]['values'] or handle errors gracefully.
     """
     try:
-        pc = PC(api_key=PINECONE_API_KEY, environment=PINECONE_ENV)
-        resp = pc.inference.embed(
+        # 'pc' is presumably pinecone or something in your environment that has .inference
+        # We'll assume 'pinecone' (or an alias) is your same object. Adjust if needed.
+        query_embedding = pinecone.inference.embed(
             model="multilingual-e5-large",
-            inputs=queries,
+            inputs=[query_text],
             parameters={"input_type": "query"}
         )
-        return [r["values"] for r in resp]
+        if query_embedding and "values" in query_embedding[0]:
+            return query_embedding[0]["values"]
     except Exception as e:
-        logging.error(f"Error embedding with e5: {e}")
-        return []
+        logging.error(f"Embedding error: {e}")
+    return []
 
-def pinecone_sim_search(query, index, top_k=3):
+def similarity_search(query_text, index, top_k=3):
     """
-    1) Generate e5 embeddings
-    2) Query the specified Pinecone index
+    1) Embed with e5
+    2) Query the Pinecone index
+    3) Return top_k matches
     """
     if not index:
-        logging.warning("No Pinecone index provided, can't search.")
         return []
-
-    emb = embed_e5([query])
-    if not emb:
+    vec = embed_query(query_text)
+    if not vec:
         return []
-
     try:
-        results = index.query(
-            vector=emb[0],
-            top_k=top_k,
-            include_metadata=True
-        )
-        return results.matches if results and hasattr(results, "matches") else []
+        result = index.query(vector=vec, top_k=top_k, include_metadata=True)
+        return result.matches if result and hasattr(result, "matches") else []
     except Exception as e:
         logging.error(f"Pinecone query error: {e}")
         return []
 
-def retrieve_usda_data(food_query):
+###############################################################################
+# 3) RETRIEVAL FUNCTIONS
+###############################################################################
+def retrieve_usda_item(food_query):
     """
-    Retrieve top USDA match for 'food_query' from 'usda-food-data' index.
-    Return a dict with:
-      {
-        "Food Name": ...,
-        "Nutrients": { full metadata ... }
-      }
-    or None if no data.
+    Get top match from 'usda-food-data'.
+    Return { 'Food Name': ..., 'Nutrients': {...} }
+    or None if not found.
     """
-    if not usda_index:
-        return None
-
-    matches = pinecone_sim_search(food_query, usda_index, top_k=1)
+    matches = similarity_search(food_query, usda_index, top_k=1)
     if not matches:
         return None
-
-    # Just the top match
     meta = matches[0].metadata
     return {
         "Food Name": meta.get("FOOD_NAME", "Unknown Food"),
         "Nutrients": meta
     }
 
-def parse_ingredients_from_usda(item):
+def retrieve_chemical_info(ingredient):
     """
-    If USDA data has 'FOOD_INGREDIENTS', parse them (split by commas).
-    Return list of ingredient strings.
+    Query 'food-chemicals' index for a single ingredient.
+    Return top match's metadata or a fallback if none found.
     """
-    if not item or "Nutrients" not in item:
-        return []
-    ingred_str = item["Nutrients"].get("FOOD_INGREDIENTS", "")
+    matches = similarity_search(ingredient, chem_index, top_k=1)
+    if not matches:
+        return {"Ingredient": ingredient, "Info": "No chemical match found."}
+    data = matches[0].metadata
+    data["Ingredient"] = ingredient
+    return data
+
+def parse_ingredients(nutr_metadata):
+    """
+    Splits the 'FOOD_INGREDIENTS' field by commas.
+    """
+    ingred_str = nutr_metadata.get("FOOD_INGREDIENTS", "")
     if not ingred_str.strip():
         return []
-    return [i.strip() for i in ingred_str.split(",") if i.strip()]
+    return [x.strip() for x in ingred_str.split(",") if x.strip()]
 
-def retrieve_chemical_data(ingredient):
+###############################################################################
+# 4) BUILD PROMPT FOR SAMBANOVA
+###############################################################################
+def build_prompt(user_query, usda_item, chem_data):
     """
-    Search the 'food-chemicals' index for the ingredient. Return top match or None.
-    """
-    if not chem_index:
-        return None
-    matches = pinecone_sim_search(ingredient, chem_index, top_k=1)
-    if matches:
-        return matches[0].metadata
-    return None
-
-def get_chemicals_for_ingredients(ingredients):
-    """
-    For each ingredient in the list, fetch chemical data from 'food-chemicals'.
-    Return a list of dicts.
-    """
-    results = []
-    for ing in ingredients:
-        c = retrieve_chemical_data(ing)
-        if c:
-            # Merge the retrieved metadata with the ingredient name
-            c["Ingredient"] = ing
-            results.append(c)
-        else:
-            results.append({
-                "Ingredient": ing,
-                "Info": "No chemical match found"
-            })
-    return results
-
-def build_prompt(user_query, usda_item, chemicals):
-    """
-    Creates a big prompt that includes disclaimers about 100g data, brand disclaimers, 
-    mention 0.0 means below detection limit, etc., referencing both USDA and chemical info.
+    Combine USDA + chemical data into a single big prompt:
+    - disclaimers about 100g-based nutrients
+    - mention 0.0 means below detection
+    - brand disclaimers
+    - highlight chemical info if found
+    - final instructions about follow-up
     """
     if not usda_item:
-        return f"User asked: {user_query}\nNo USDA data available."
+        return f"User asked: {user_query}\nNo data found."
 
-    # Format USDA data
-    food_name = usda_item["Food Name"]
-    nutr = usda_item["Nutrients"]
-    nutr_text = "\n    ".join([f"{k}: {v}" for k, v in nutr.items()])
+    # Format USDA item
+    nutr_str = "\n".join([f"   {k}: {v}" for k, v in usda_item["Nutrients"].items()])
 
     # Format chemical data
-    chem_text = ""
-    for cinfo in chemicals:
-        chem_text += f"- Ingredient: {cinfo.get('Ingredient', 'Unknown')}\n"
-        for key, val in cinfo.items():
-            if key != "Ingredient":
-                chem_text += f"   {key}: {val}\n"
-        chem_text += "\n"
+    chem_str_list = []
+    for c in chem_data:
+        lines = [f"{k}: {v}" for k, v in c.items() if k != "Ingredient"]
+        chem_str = f"- Ingredient: {c.get('Ingredient', 'Unknown')}\n   " + "\n   ".join(lines)
+        chem_str_list.append(chem_str)
+    chem_block = "\n".join(chem_str_list)
 
     big_prompt = f"""
 Answer the user's query: {user_query}
 
-We have USDA data for a food item:
-- Food Name: {food_name}
+We have USDA data (per 100g):
+- Food Name: {usda_item['Food Name']}
   Nutrients:
-    {nutr_text}
+{nutr_str}
 
-We also checked each ingredient in the 'food-chemicals' index:
-{chem_text}
+We also checked each ingredient against 'food-chemicals':
+{chem_block}
 
-IMPORTANT:
-1. Nutrient data is typically per 100g. 0.0 => below detection limit.
-2. If brand-specific info is missing but user specifically wants that brand, say "not enough info."
-3. If user wants serving size details but we only have 100g data, clarify that.
-4. If user wants chemical or allergen info, use what we've retrieved or say we lack data.
-5. Start your answer referencing the item found. Use *Markdown formatting*. 
-6. If not enough info, respond with "I'm sorry, I don't have enough information..."
-
-At the end, provide example *follow-up questions* in italics, e.g.:
-*What vitamins are present?*, *Does it contain any allergens?*, etc.
-Use $...$ for in-line LaTeX if needed. Avoid square brackets in LaTeX.
+IMPORTANT POINTS:
+1. 0.0 => below detection limit.
+2. If brand-specific info is missing but user specifically wants that brand, say not enough info.
+3. If user wants serving size detail but we only have 100g, clarify that.
+4. Start your answer referencing the item. Use *Markdown* formatting.
+5. If not enough info, say "I'm sorry, I don't have enough information..."
+6. End with some *example follow-up questions* in italics.
+Use $ for inline LaTeX if needed. Avoid square brackets in LaTeX.
 """
     return big_prompt
 
-def plot_nutrients(nutr):
+###############################################################################
+# 5) SAMBANOVA CODE (SIMILAR TO YOUR EXAMPLE)
+###############################################################################
+def generate_response_sambanova(api_key, prompt):
     """
-    Create a bar chart of some selected numeric nutrients: 
-    Energy (kcal), Protein (g), Total lipid (fat) (g), Carbohydrate (g), Sugars (g).
-    Return as a PNG in bytes.
+    Streams the SambaNova response, collecting each chunk to build final output.
     """
-    # Keys we might care about:
-    keys = {
+    if not api_key:
+        return "Error: Please enter a valid SambaNova API key."
+
+    try:
+        # We'll do the same pattern as your code
+        client = openai.OpenAI(
+            base_url="https://api.sambanova.ai/v1/",
+            api_key=api_key
+        )
+
+        completion = client.chat.completions.create(
+            model="Meta-Llama-3.1-405B-Instruct",
+            messages=[{"role": "user", "content": prompt}],
+            stream=True
+        )
+
+        response = []
+        for chunk in completion:
+            piece = chunk.choices[0].delta.get("content", "")
+            response.append(piece)
+
+        return "".join(response).strip()
+
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+###############################################################################
+# 6) OPTIONAL: PLOT KEY NUTRIENTS (CALORIES, PROTEIN, ETC.) VIA MATPLOTLIB
+###############################################################################
+def plot_nutrients_bar(nutr_metadata):
+    """
+    Build a bar chart of e.g.:
+    - Energy (kcal)
+    - Protein (g)
+    - Total lipid (fat) (g)
+    - Carbohydrate (g)
+    - Sugars (g)
+    Return base64-encoded PNG or None if no numeric data to plot.
+    """
+    fields = {
         "Energy (kcal)": "Calories",
         "Protein (g)": "Protein",
         "Total lipid (fat) (g)": "Fat",
@@ -216,133 +224,94 @@ def plot_nutrients(nutr):
         "Sugars (g)": "Sugar"
     }
 
-    data = []
-    for raw_key, label in keys.items():
-        val = nutr.get(raw_key, 0)
+    import matplotlib.pyplot as plt
+    labels = []
+    vals = []
+    for raw, label in fields.items():
+        val = nutr_metadata.get(raw, 0)
         try:
             val = float(val)
         except:
             val = 0
-        data.append((label, val))
+        labels.append(label)
+        vals.append(val)
 
-    # If all zero, skip
-    if all(v == 0 for _, v in data):
+    if all(v == 0 for v in vals):
         return None
 
-    # Plot using matplotlib
-    labels = [x[0] for x in data]
-    values = [x[1] for x in data]
-
-    plt.figure(figsize=(5, 3))
-    plt.bar(labels, values, color="teal")
-    plt.title("Nutrient Chart (per 100g)")
-    plt.ylabel("Amount")
+    plt.figure(figsize=(5,3))
+    plt.bar(labels, vals, color="teal")
+    plt.title("Key Nutrients (per 100g)")
     plt.tight_layout()
 
-    # Save to PNG in-memory
     buf = io.BytesIO()
     plt.savefig(buf, format="png")
     plt.close()
     buf.seek(0)
-    return buf.read()
 
-#############################################################################
-# 3) CHAINLIT SETUP
-#############################################################################
-SAMBANOVA_BASE_URL = "https://api.sambanova.ai/v1/"
-MODEL_NAME = "Meta-Llama-3.1-405B-Instruct"
+    b64chart = base64.b64encode(buf.read()).decode("utf-8")
+    return b64chart
 
-# We'll create a single AsyncOpenAI client (SambaNova)
-client = AsyncOpenAI(
-    base_url=SAMBANOVA_BASE_URL,
-    api_key=SAMBANOVA_API_KEY
-)
+###############################################################################
+# 7) STREAMLIT UI
+###############################################################################
+st.title("USDA + Food Chemicals (2 Index) + SambaNova [Single File]")
 
-async def stream_llm_response(messages):
-    """
-    Streams the LLM response in Chainlit.
-    """
-    msg = cl.Message(content="")
-    await msg.send()
+st.markdown("""
+**Instructions**:
+1. Input your SambaNova API key.
+2. Enter a food item (e.g. "Oreo Cookies").
+3. We'll query:
+   - `usda-food-data` for nutrient info
+   - `food-chemicals` for each ingredient
+4. We'll also generate a bar chart for key nutrients.
+5. Finally, SambaNova will produce a streamed LLM response using a big prompt.
+""")
 
-    try:
-        # Stream from SambaNova
-        stream = await client.chat.completions.create(
-            messages=messages,
-            stream=True,
-            model=MODEL_NAME,
-            temperature=0
-        )
+samba_key = st.text_input("SambaNova API Key:", type="password")
+food_query = st.text_input("Food item (e.g., 'Oreo Cookies'):")
 
-        final_content = ""
-        async for part in stream:
-            piece = part.choices[0].delta.get("content", "")
-            await msg.stream_token(piece)
-            final_content += piece
-
-        # Finalize
-        messages.append({"role": "assistant", "content": final_content})
-        await msg.send()
-
-    except Exception as e:
-        logging.error(f"Streaming error: {e}")
-        await msg.update(content=f"Error from SambaNova: {e}")
-
-
-#############################################################################
-# 4) CHAINLIT EVENT HANDLERS
-#############################################################################
-@cl.on_chat_start
-async def start():
-    welcome = """
-**Welcome to the USDA Food & Chemicals Assistant (Single-File Chainlit)!**
-
-**How it Works**:
-1. We'll look up the food in the 'usda-food-data' index.
-2. We'll parse its 'FOOD_INGREDIENTS' and check each ingredient in 'food-chemicals'.
-3. We'll plot a small bar chart of key nutrients (calories, protein, etc.).
-4. Finally, we pass everything to SambaNova for a final, detailed answer.
-
-Just type the name of a food item to begin!
-"""
-    await cl.Message(content=welcome).send()
-
-@cl.on_message
-async def main_flow(message: cl.Message):
-    user_query = message.content.strip()
-    if not user_query:
-        await cl.Message(
-            content="Please enter a valid query (e.g., 'Oreo Cookies')."
-        ).send()
-        return
-
-    # 1) Retrieve USDA data
-    usda_item = retrieve_usda_data(user_query)
-    if not usda_item:
-        await cl.Message(
-            content="I'm sorry, I don't have enough information to accurately answer that question."
-        ).send()
-        return
-
-    # 2) Parse ingredients, get chemical info
-    ingredients = parse_ingredients_from_usda(usda_item)
-    chemical_info = get_chemicals_for_ingredients(ingredients)
-
-    # 3) Plot nutrients
-    chart_buf = plot_nutrients(usda_item["Nutrients"])
-    if chart_buf:
-        # Convert to base64 for chainlit image
-        b64chart = base64.b64encode(chart_buf).decode("utf-8")
-        await cl.Image(content=b64chart, name="nutrient_chart.png").send()
+if st.button("Analyze"):
+    if not food_query.strip():
+        st.error("Please enter a valid food item.")
     else:
-        await cl.Message(content="No numeric nutrient data to plot.").send()
+        # 1) Retrieve USDA item
+        usda_item = retrieve_usda_item(food_query.strip())
+        if not usda_item:
+            st.error("No USDA data found for that query in Pinecone.")
+        else:
+            st.success(f"USDA data found for: {usda_item['Food Name']}")
+            # Show entire USDA metadata
+            st.subheader("USDA Metadata")
+            st.json(usda_item["Nutrients"])
 
-    # 4) Build the big prompt
-    system_prompt = build_prompt(user_query, usda_item, chemical_info)
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_query},
-    ]
+            # 2) Plot nutrients
+            st.subheader("Key Nutrient Bar Chart")
+            chart_b64 = plot_nutrients_bar(usda_item["Nutrients"])
+            if chart_b64:
+                st.image(f"data:image/png;base64,{chart_b64}")
+            else:
+                st.info("No numeric nutrient data to plot.")
 
-    # 5) Stream the LLM response
-    await stream_llm_response(messages)
+            # 3) Retrieve chemical info for each ingredient
+            st.subheader("Chemical Info for Ingredients")
+            ingredients = parse_ingredients(usda_item["Nutrients"])
+            chem_data_list = []
+            if ingredients:
+                for ing in ingredients:
+                    chem_data = retrieve_chemical_info(ing)
+                    chem_data_list.append(chem_data)
+                    st.write(f"**Ingredient:** {chem_data.get('Ingredient','Unknown')}")
+                    st.json(chem_data)
+            else:
+                st.info("No ingredients found in USDA data.")
+
+            # 4) Build final prompt & call SambaNova
+            st.subheader("SambaNova LLM Explanation")
+            final_prompt = build_prompt(food_query, usda_item, chem_data_list)
+            if not samba_key:
+                st.warning("Please enter your SambaNova API key above.")
+            else:
+                with st.spinner("Generating response from SambaNova..."):
+                    response_text = generate_response_sambanova(samba_key, final_prompt)
+                st.markdown(response_text)
