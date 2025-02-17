@@ -7,3 +7,4 @@ chainlit
 streamlit
 python-dotenv
 requests
+matplotlib
