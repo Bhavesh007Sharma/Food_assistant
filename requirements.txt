@@ -1,0 +1,9 @@
+openai
+pinecone-client
+datasets
+pandas
+numpy
+chainlit
+streamlit
+python-dotenv
+requests
