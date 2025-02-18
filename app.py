@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
 import openai
-from pinecone.grpc import PineconeGRPC as Pinecone
+from pinecone import Pinecone  # Updated import (removed grpc)
 
 # Load environment variables
 load_dotenv()
@@ -27,11 +27,12 @@ MODEL_NAME = "Meta-Llama-3.1-405B-Instruct"
 ####################################
 # Initialize Pinecone indexes
 ####################################
-pc = Pinecone(api_key=PINECONE_API_KEY ,environment="us-east-1")
+pc = Pinecone(api_key=PINECONE_API_KEY, environment="us-east-1")
 
-usda_index = pc.Index(name=USDA_INDEX_NAME, host=USDA_INDEX_HOST)
-nutrient_index = pc.Index(name=NUTRIENT_INDEX_NAME, host=NUTRIENT_INDEX_HOST)
-chem_index = pc.Index(name=CHEM_INDEX_NAME, host=CHEM_INDEX_HOST)
+# Removed the 'host' parameters for non-gRPC version usage
+usda_index = pc.Index(name=USDA_INDEX_NAME)
+nutrient_index = pc.Index(name=NUTRIENT_INDEX_NAME)
+chem_index = pc.Index(name=CHEM_INDEX_NAME)
 
 ####################################
 # Similarity Search Function
