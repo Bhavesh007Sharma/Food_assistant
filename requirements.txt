@@ -4,7 +4,7 @@ pinecone-client
 datasets
 pandas
 numpy
-chainlit
+chainlit==1.3.2
 streamlit
 python-dotenv
 requests
