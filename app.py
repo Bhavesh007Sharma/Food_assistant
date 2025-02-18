@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
 import openai
-import pinecone
+from pinecone import Pinecone, ServerlessSpec
 
 # -----------------------------
 # Load Environment Variables
@@ -22,18 +22,26 @@ SAMBA_BASE_URL = "https://api.sambanova.ai/v1/"
 MODEL_NAME = "Meta-Llama-3.1-405B-Instruct"
 
 # -----------------------------
-# Initialize Pinecone (v2 client)
+# Initialize Pinecone (v2 Client)
 # -----------------------------
-pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
-usda_index = pinecone.Index(USDA_INDEX_NAME)
-nutrient_index = pinecone.Index(NUTRIENT_INDEX_NAME)
-chem_index = pinecone.Index(CHEM_INDEX_NAME)
+# Create an instance of Pinecone using the new client interface.
+pc = Pinecone(api_key=PINECONE_API_KEY)
+
+# Optionally, you can check if the index exists and create it if needed.
+# For example:
+# if USDA_INDEX_NAME not in [idx.name for idx in pc.list_indexes()]:
+#     pc.create_index(name=USDA_INDEX_NAME, dimension=1536, metric='cosine', 
+#                     spec=ServerlessSpec(cloud='aws', region='us-east1'))
+# (Assumes your indexes already exist, otherwise uncomment and adjust as needed.)
+
+usda_index = pc.Index(name=USDA_INDEX_NAME)
+nutrient_index = pc.Index(name=NUTRIENT_INDEX_NAME)
+chem_index = pc.Index(name=CHEM_INDEX_NAME)
 
 # -----------------------------
 # Similarity Search Function
 # -----------------------------
 def similarity_search(query, index, top_k=5):
-    # Use OpenAI's embedding API for the query embedding
     try:
         embed_response = openai.Embedding.create(
             input=[query],
@@ -43,9 +51,8 @@ def similarity_search(query, index, top_k=5):
         st.error(f"Embedding error: {e}")
         return []
     embedding = embed_response["data"][0]["embedding"]
-    # Query the Pinecone index with the embedding
     res = index.query(vector=embedding, top_k=top_k, include_metadata=True)
-    return res["matches"] if "matches" in res else []
+    return res.get("matches", [])
 
 # -----------------------------
 # Formatting Functions for Display
@@ -102,7 +109,7 @@ def sambanova_chat(prompt):
 # Streamlit UI
 # -----------------------------
 st.title("USDA & Chemical Ingredient Assistant")
-st.markdown("Enter a food query (e.g., **Oreo Cookies**) to retrieve details, view nutrient charts, and receive expert insights.")
+st.markdown("Enter a food query (e.g., **Oreo Cookies**) to retrieve USDA food details, view nutrient charts, and receive expert insights.")
 
 query_input = st.text_input("Enter a food item:")
 
