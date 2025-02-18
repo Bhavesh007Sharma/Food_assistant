@@ -11,3 +11,4 @@ requests
 matplotlib
 websockets
 protoc_gen_openapiv2
+pydantic<2
