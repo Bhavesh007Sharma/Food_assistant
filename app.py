@@ -5,43 +5,31 @@ from dotenv import load_dotenv
 import openai
 from pinecone import Pinecone, ServerlessSpec
 
-# -----------------------------
-# Load Environment Variables
-# -----------------------------
+# 1) Load environment variables
 load_dotenv()
 
 SAMBANOVA_API_KEY = os.getenv("SAMBANOVA_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
 
-USDA_INDEX_NAME = os.getenv("USDA_INDEX_NAME")
-NUTRIENT_INDEX_NAME = os.getenv("NUTRIENT_INDEX_NAME")
-CHEM_INDEX_NAME = os.getenv("CHEM_INDEX_NAME")
+USDA_INDEX_NAME = os.getenv("USDA_INDEX_NAME")      # "usda-food-details"
+NUTRIENT_INDEX_NAME = os.getenv("NUTRIENT_INDEX_NAME")  # "usda-nutrients"
+CHEM_INDEX_NAME = os.getenv("CHEM_INDEX_NAME")          # "food-chemicals"
 
 SAMBA_BASE_URL = "https://api.sambanova.ai/v1/"
 MODEL_NAME = "Meta-Llama-3.1-405B-Instruct"
 
-# -----------------------------
-# Initialize Pinecone (v2 Client)
-# -----------------------------
-# Create an instance of Pinecone using the new client interface.
+# 2) Initialize Pinecone using the new client approach
 pc = Pinecone(api_key=PINECONE_API_KEY)
 
-# Optionally, you can check if the index exists and create it if needed.
-# For example:
-# if USDA_INDEX_NAME not in [idx.name for idx in pc.list_indexes()]:
-#     pc.create_index(name=USDA_INDEX_NAME, dimension=1536, metric='cosine', 
-#                     spec=ServerlessSpec(cloud='aws', region='us-east1'))
-# (Assumes your indexes already exist, otherwise uncomment and adjust as needed.)
-
+# Access the existing indexes by name.
+# Make sure these names match your .env EXACTLY.
 usda_index = pc.Index(name=USDA_INDEX_NAME)
 nutrient_index = pc.Index(name=NUTRIENT_INDEX_NAME)
 chem_index = pc.Index(name=CHEM_INDEX_NAME)
 
-# -----------------------------
-# Similarity Search Function
-# -----------------------------
+# 3) Similarity Search using OpenAI Embeddings
 def similarity_search(query, index, top_k=5):
+    # Use OpenAI to create an embedding for the query
     try:
         embed_response = openai.Embedding.create(
             input=[query],
@@ -51,12 +39,12 @@ def similarity_search(query, index, top_k=5):
         st.error(f"Embedding error: {e}")
         return []
     embedding = embed_response["data"][0]["embedding"]
+    
+    # Query the specified Pinecone index
     res = index.query(vector=embedding, top_k=top_k, include_metadata=True)
     return res.get("matches", [])
 
-# -----------------------------
-# Formatting Functions for Display
-# -----------------------------
+# 4) Formatting Functions
 def format_usda_food_data(matches):
     formatted = ""
     for i, match in enumerate(matches, start=1):
@@ -85,14 +73,15 @@ def format_chem_data(matches):
         formatted += f"{i}. Chemical Info: {meta}\n"
     return formatted
 
-# -----------------------------
-# SambaNova Chat Completion
-# -----------------------------
+# 5) SambaNova Chat Completion
 def sambanova_chat(prompt):
     if not SAMBANOVA_API_KEY:
         return "Error: Missing SambaNova API key."
     try:
-        client = openai.OpenAI(base_url=SAMBA_BASE_URL, api_key=SAMBANOVA_API_KEY)
+        client = openai.OpenAI(
+            base_url=SAMBA_BASE_URL,
+            api_key=SAMBANOVA_API_KEY
+        )
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
@@ -105,16 +94,14 @@ def sambanova_chat(prompt):
     except Exception as e:
         return f"Error: {e}"
 
-# -----------------------------
-# Streamlit UI
-# -----------------------------
+# 6) Streamlit UI
 st.title("USDA & Chemical Ingredient Assistant")
-st.markdown("Enter a food query (e.g., **Oreo Cookies**) to retrieve USDA food details, view nutrient charts, and receive expert insights.")
+st.markdown("Type in a food (e.g., **Oreo Cookies**) to retrieve details from your three Pinecone indexes.")
 
 query_input = st.text_input("Enter a food item:")
 
 if st.button("Search") and query_input:
-    # 1) Retrieve USDA Food Details
+    # 1) USDA Food Details
     usda_matches = similarity_search(query_input, usda_index, top_k=1)
     if not usda_matches:
         st.error("No matches found in USDA food details.")
@@ -122,40 +109,21 @@ if st.button("Search") and query_input:
         food_details = format_usda_food_data(usda_matches)
         st.subheader("USDA Food Details")
         st.text(food_details)
+
         best_match_meta = usda_matches[0].get("metadata", {})
         food_name = best_match_meta.get("FOOD_NAME", "Unknown")
         ingredients_str = best_match_meta.get("FOOD_INGREDIENTS", "")
-        
-        # 2) Retrieve USDA Nutrient Details (using food name as query)
+
+        # 2) USDA Nutrient Details
         nutrient_matches = similarity_search(food_name, nutrient_index, top_k=1)
         nutrient_details = format_nutrient_data(nutrient_matches)
         st.subheader("USDA Nutrient Details")
         if nutrient_details:
             st.text(nutrient_details)
-            # Prepare nutrient chart data
-            nutrient_keys = [
-                "CARBOHYDRATE, BY DIFFERENCE (G)",
-                "FIBER, TOTAL DIETARY (G)",
-                "PROTEIN (G)",
-                "TOTAL SUGARS (G)",
-                "TOTAL LIPID (FAT) (G)",
-                "FATTY ACIDS, TOTAL SATURATED (G)"
-            ]
-            nutrient_values = {}
-            meta_nutrient = nutrient_matches[0].get("metadata", {})
-            for key in nutrient_keys:
-                try:
-                    nutrient_values[key] = float(meta_nutrient.get(key, 0))
-                except:
-                    nutrient_values[key] = 0
-            if nutrient_values:
-                df_chart = pd.DataFrame(list(nutrient_values.items()), columns=["Nutrient", "Value"]).set_index("Nutrient")
-                st.subheader("Nutrient Chart")
-                st.bar_chart(df_chart)
         else:
             st.info("No nutrient details found.")
-        
-        # 3) Retrieve Chemical Information for Each Ingredient
+
+        # 3) Chemical Info
         st.subheader("Chemical Info per Ingredient")
         if ingredients_str:
             ing_list = [x.strip() for x in ingredients_str.split(",") if x.strip()]
@@ -170,8 +138,8 @@ if st.button("Search") and query_input:
             st.markdown("\n".join(chem_results))
         else:
             st.info("No ingredients information found.")
-        
-        # 4) Combined Explanation via SambaNova Chat Completion
+
+        # 4) SambaNova Explanation
         prompt_text = f"""
 You are an expert nutrition and ingredient assistant. The user asked about "{food_name}".
 USDA Food Details:
