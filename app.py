@@ -99,17 +99,12 @@ def sambanova_chat(prompt):
         response = openai.ChatCompletion.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            stream=True
+            stream=False  # Streaming disabled to avoid JSON parsing issues
         )
-        full_response = ""
-        for chunk in response:
-            if "choices" in chunk and chunk.choices[0].delta:
-                delta = chunk.choices[0].delta
-                if "content" in delta:
-                    full_response += delta["content"]
-        return full_response.strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
         return f"Error: {e}"
+
 
 ####################################
 # Improved Prompt Generation
