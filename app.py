@@ -10,7 +10,8 @@ from pinecone import Pinecone  # Updated import (removed grpc)
 load_dotenv()
 
 # Retrieve keys and endpoints from .env
-SAMBANOVA_API_KEY = os.getenv("SAMBANOVA_API_KEY")
+# (Using the same variable for Hugging Face API key as before)
+HF_API_KEY = os.getenv("HF_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 
 USDA_INDEX_NAME = os.getenv("USDA_INDEX_NAME")
@@ -20,9 +21,9 @@ USDA_INDEX_HOST = os.getenv("USDA_INDEX_HOST")
 NUTRIENT_INDEX_HOST = os.getenv("NUTRIENT_INDEX_HOST")
 CHEM_INDEX_HOST = os.getenv("CHEM_INDEX_HOST")
 
-# SambaNova API configuration
-SAMBA_BASE_URL = "https://api.sambanova.ai/v1/"
-MODEL_NAME = "Meta-Llama-3.3-70B-Instruct"
+# Hugging Face Inference API configuration for chat completions
+HF_BASE_URL = "https://router.huggingface.co/together"
+HF_MODEL_NAME = "deepseek-ai/DeepSeek-R1"
 
 ####################################
 # Initialize Pinecone indexes
@@ -87,24 +88,29 @@ def format_chem_data(matches):
     return formatted
 
 ####################################
-# SambaNova Chat Completion using OpenAI
+# Chat Completion using Hugging Face Inference API
 ####################################
-def sambanova_chat(prompt):
-    if not SAMBANOVA_API_KEY:
-        return "Error: Missing SambaNova API key."
+def hf_chat(prompt):
+    if not HF_API_KEY:
+        return "Error: Missing Hugging Face API key."
     try:
-        # Configure OpenAI to use SambaNova API settings
-        openai.api_base = SAMBA_BASE_URL
-        openai.api_key = SAMBANOVA_API_KEY
+        openai.api_base = HF_BASE_URL
+        openai.api_key = HF_API_KEY
         response = openai.ChatCompletion.create(
-            model=MODEL_NAME,
+            model=HF_MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            stream=False  # Streaming disabled to avoid JSON parsing issues
+            max_tokens=500,
+            stream=True
         )
-        return response.choices[0].message.content.strip()
+        full_response = ""
+        for chunk in response:
+            if "choices" in chunk and chunk.choices[0].delta:
+                delta = chunk.choices[0].delta
+                if "content" in delta:
+                    full_response += delta["content"]
+        return full_response.strip()
     except Exception as e:
         return f"Error: {e}"
-
 
 ####################################
 # Improved Prompt Generation
@@ -112,24 +118,18 @@ def sambanova_chat(prompt):
 def generate_prompt(food_name, food_details, nutrient_details, ingredients_str):
     prompt = f"""
 You are an expert nutrition and ingredient assistant. Below is the detailed data for the food item **{food_name}**:
-
 **USDA Food Details:**
 {food_details}
-
 **Nutrient Information:**
 {nutrient_details}
-
 **Ingredients:**
 {ingredients_str if ingredients_str else "Not available"}
-
 Using the data above, please provide a clear, concise explanation covering the following:
 - A brief description of the food item.
 - A detailed nutrient breakdown, including macro- and micronutrients.
 - An analysis of the ingredient composition and any potential allergens.
 - Relevant chemical insights related to the ingredients.
-
 Please format your response using markdown with headings, bullet points, and, where needed, inline LaTeX equations (wrapped in single dollar signs, e.g. $E=mc^2$). Also, provide some example follow-up questions in *italics* (for example, *Does this food contain any allergens?*, *What is the calorie count per serving?*).
-
 If the provided data is insufficient, reply with "I'm sorry, I don't have enough information to accurately answer that question."
     """
     return prompt
@@ -208,14 +208,14 @@ if st.button("Search") and query_input:
         else:
             st.info("No ingredient information available.")
         
-        # 4) Combined Explanation via SambaNova Chat Completion
+        # 4) Combined Explanation via Hugging Face Chat Completion
         prompt_text = generate_prompt(
             food_name, 
             food_details_formatted, 
             nutrient_details_formatted, 
             ingredients_str
         )
-        st.subheader("SambaNova Explanation")
+        st.subheader("Chemical & Nutrient Explanation")
         st.markdown("Generating explanation...")
-        explanation = sambanova_chat(prompt_text)
+        explanation = hf_chat(prompt_text)
         st.markdown(explanation)
