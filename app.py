@@ -27,7 +27,7 @@ MODEL_NAME = "Meta-Llama-3.1-405B-Instruct"
 ####################################
 # Initialize Pinecone indexes
 ####################################
-pc = Pinecone(api_key=PINECONE_API_KEY or "")
+pc = Pinecone(api_key=PINECONE_API_KEY ,environment="us-east-1")
 
 usda_index = pc.Index(name=USDA_INDEX_NAME, host=USDA_INDEX_HOST)
 nutrient_index = pc.Index(name=NUTRIENT_INDEX_NAME, host=NUTRIENT_INDEX_HOST)
