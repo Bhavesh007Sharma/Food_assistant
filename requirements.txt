@@ -9,3 +9,5 @@ streamlit
 python-dotenv
 requests
 matplotlib
+websockets
+protoc_gen_openapiv2
