@@ -22,7 +22,7 @@ CHEM_INDEX_HOST = os.getenv("CHEM_INDEX_HOST")
 
 # SambaNova API configuration
 SAMBA_BASE_URL = "https://api.sambanova.ai/v1/"
-MODEL_NAME = "Meta-Llama-3.1-405B-Instruct"
+MODEL_NAME = "Meta-Llama-3.3-70B-Instruct"
 
 ####################################
 # Initialize Pinecone indexes
