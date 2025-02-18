@@ -23,7 +23,7 @@ CHEM_INDEX_HOST = os.getenv("CHEM_INDEX_HOST")
 
 # Hugging Face Inference API configuration for chat completions
 HF_BASE_URL = "https://router.huggingface.co/together"
-HF_MODEL_NAME = "deepseek-ai/DeepSeek-R1"
+HF_MODEL_NAME = "meta-llama/Llama-3.3-70B-Instruct"
 
 ####################################
 # Initialize Pinecone indexes
