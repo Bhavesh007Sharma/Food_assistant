@@ -14,6 +14,8 @@ from langchain.llms.base import LLM
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 from langchain.docstore.document import Document
+from langchain.retrievers import BaseRetriever
+from typing import List, Any, Dict
 
 # Load environment variables
 load_dotenv()
@@ -21,7 +23,6 @@ load_dotenv()
 # Retrieve keys and endpoints from .env
 TOGETHER_API_KEY = os.getenv("SAMBANOVA_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-
 USDA_INDEX_NAME = os.getenv("USDA_INDEX_NAME")
 NUTRIENT_INDEX_NAME = os.getenv("NUTRIENT_INDEX_NAME")
 CHEM_INDEX_NAME = os.getenv("CHEM_INDEX_NAME")
@@ -90,7 +91,7 @@ def format_chem_data(matches):
     return formatted
 
 ####################################
-# Your Original Prompt Generation Function
+# Original Prompt Generation Function
 ####################################
 def generate_prompt(food_name, food_details, nutrient_details, ingredients_str):
     prompt = f"""
@@ -144,10 +145,10 @@ class TogetherLLM(LLM):
         return "together"
 
 ####################################
-# Custom Retriever for LangChain (Pinecone-based)
+# Custom Retriever for LangChain (subclassing BaseRetriever)
 ####################################
-class PineconeRetriever:
-    def get_relevant_documents(self, query):
+class PineconeRetriever(BaseRetriever):
+    def get_relevant_documents(self, query: str, **kwargs) -> List[Document]:
         docs = []
         # USDA Food Details
         usda_matches = similarity_search(query, usda_index, top_k=1)
@@ -168,7 +169,7 @@ class PineconeRetriever:
             if ingredients_str:
                 ing_list = [x.strip() for x in ingredients_str.split(",") if x.strip()]
                 chem_results = []
-                for ing in ing_list:
+                for ing in ing_list: 
                     chem_matches = similarity_search(ing, chem_index, top_k=1)
                     if chem_matches:
                         chem_info_formatted = format_chem_data(chem_matches)
@@ -182,16 +183,25 @@ class PineconeRetriever:
             docs.append(Document(page_content=prompt_text, metadata={"source": "Prompt"}))
         return docs
 
+    @property
+    def search_kwargs(self) -> Dict[str, Any]:
+        return {}
+
+    async def aget_relevant_documents(self, query: str, **kwargs) -> List[Document]:
+        return self.get_relevant_documents(query, **kwargs)
+
 ####################################
 # Initialize LangChain LLM, Memory & Retrieval Chain using Together API
 ####################################
 llm = TogetherLLM()
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 retriever = PineconeRetriever()
-chat_chain = ConversationalRetrievalChain.from_llm(llm, retriever=retriever, memory=memory, chain_type="stuff")
+chat_chain = ConversationalRetrievalChain.from_llm(
+    llm, retriever=retriever, memory=memory, chain_type="stuff"
+)
 
 ####################################
-# Streamlit UI - Search and Continuous Chat
+# Streamlit UI - Search, Graphs, and Continuous Chat
 ####################################
 st.title("USDA & Chemical Ingredient Assistant with Continuous Chat")
 st.markdown(
