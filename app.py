@@ -1,10 +1,13 @@
 import os
+import cv2
+import numpy as np
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 from dotenv import load_dotenv
 from together import Together
 from pinecone import Pinecone  # Updated import
+from pyzbar.pyzbar import decode  # For barcode decoding
 
 # Load environment variables
 load_dotenv()
@@ -55,7 +58,7 @@ def format_usda_food_data(matches):
         meta = match.get("metadata", {})
         food_name = meta.get("FOOD_NAME", "Unknown Food")
         formatted += f"**{i}. {food_name}**\n"
-        formatted += f"- **FOOD_ID:** {meta.get('FOOD_ID', '')}\n"
+        formatted += f"- **FOOD_ID (Barcode):** {meta.get('FOOD_ID', '')}\n"
         formatted += f"- **Ingredients:** {meta.get('FOOD_INGREDIENTS', '')}\n\n"
     return formatted
 
@@ -135,15 +138,38 @@ st.title("USDA & Chemical Ingredient Assistant")
 st.markdown(
     """
 Enter a food item (e.g., **Oreo Cookies**) to retrieve USDA details, nutrient information, chemical insights, allergen analysis, hazardous effects, and healthier alternatives.
-"""
+    """
 )
 
-query_input = st.text_input("Enter a food item:")
+# Choose input mode: text or barcode image via live decoding using OpenCV.
+input_mode = st.radio("Select input mode:", ["Text", "Barcode Image"])
+
+if input_mode == "Text":
+    query_input = st.text_input("Enter a food item:")
+else:
+    uploaded_file = st.file_uploader("Upload a barcode image", type=["png", "jpg", "jpeg"])
+    if uploaded_file is not None:
+        # Convert uploaded file to a numpy array and decode using OpenCV.
+        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        st.image(image, caption="Uploaded Barcode Image", use_column_width=True)
+        # Decode the barcode from the image using Pyzbar.
+        barcodes = decode(image)
+        if barcodes:
+            # Use the first decoded barcode.
+            barcode_data = barcodes[0].data.decode("utf-8")
+            st.success(f"Decoded Barcode: {barcode_data}")
+            query_input = barcode_data
+        else:
+            st.error("No barcode detected in the image. Please try again.")
+            query_input = ""
+    else:
+        query_input = ""
 
 if st.button("Search") and query_input:
     st.info("Searching for food details...")
     
-    # 1) Retrieve USDA Food Details
+    # 1) Retrieve USDA Food Details using the query_input (which can be a product name or barcode)
     usda_matches = similarity_search(query_input, usda_index, top_k=1)
     if not usda_matches:
         st.error("No matches found in USDA food details.")
@@ -155,6 +181,11 @@ if st.button("Search") and query_input:
         best_match_meta = usda_matches[0].get("metadata", {})
         food_name = best_match_meta.get("FOOD_NAME", "Unknown")
         ingredients_str = best_match_meta.get("FOOD_INGREDIENTS", "")
+        
+        # Display the barcode image using OpenCV decoding result (if available)
+        food_id = best_match_meta.get("FOOD_ID", "")
+        if food_id:
+            st.markdown(f"**Decoded Product Barcode:** {food_id}")
         
         # 2) Retrieve USDA Nutrient Details
         nutrient_matches = similarity_search(food_name, nutrient_index, top_k=1)
