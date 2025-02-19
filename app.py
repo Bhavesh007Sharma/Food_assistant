@@ -14,7 +14,7 @@ from langchain.llms.base import LLM
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 from langchain.docstore.document import Document
-from langchain.retrievers import BaseRetriever
+from langchain_core.retrievers import BaseRetriever
 from typing import List, Any, Dict
 
 # Load environment variables
