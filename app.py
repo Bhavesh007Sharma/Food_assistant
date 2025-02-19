@@ -179,7 +179,6 @@ class PineconeRetriever(BaseRetriever):
                         nutrient_values[key] = float(meta_nutrient.get(key, 0))
                     except Exception:
                         nutrient_values[key] = 0
-                # Store in session_state so the graph can be generated later
                 st.session_state["nutrient_values"] = nutrient_values
             else:
                 nutrient_details_formatted = "No nutrient details found."
@@ -209,7 +208,7 @@ class PineconeRetriever(BaseRetriever):
         return self.get_relevant_documents(query, **kwargs)
 
 ####################################
-# Initialize LangChain LLM, Memory & Retrieval Chain using Together API
+# Initialize LangChain LLM, Memory & Conversational Chain
 ####################################
 llm = TogetherLLM()
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
@@ -219,24 +218,25 @@ chat_chain = ConversationalRetrievalChain.from_llm(
 )
 
 ####################################
-# Streamlit UI - Search, Graphs, and Continuous Chat
+# Streamlit UI - Single Chat Interface & Graph Button
 ####################################
 st.title("USDA & Chemical Ingredient Assistant with Continuous Chat")
 st.markdown(
     """
-Enter a food item (e.g., **Oreo Cookies**) or upload a barcode image to retrieve USDA details, nutrient information, chemical insights, allergen analysis, hazardous effects, and healthier alternatives.
+Enter your query below to retrieve USDA details, nutrient information, chemical insights, allergen analysis, and healthier alternatives.
+The conversation is continuous and the context is maintained (like ChatGPT).
     """
 )
 
-# Choose input mode: text or barcode image
+# Input mode selection for text or barcode image
 input_mode = st.radio("Select input mode:", ["Text", "Barcode Image"])
 
+chat_input = ""
 if input_mode == "Text":
-    query_input = st.text_input("Enter a food item:")
+    chat_input = st.text_input("Enter your query:")
 else:
     uploaded_file = st.file_uploader("Upload a barcode image", type=["png", "jpg", "jpeg"])
     if uploaded_file is not None:
-        # Decode the image
         file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
         image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
         st.image(image, caption="Uploaded Barcode Image", use_column_width=True)
@@ -244,70 +244,26 @@ else:
         if barcodes:
             barcode_data = barcodes[0].data.decode("utf-8")
             st.success(f"Decoded Barcode: {barcode_data}")
-            query_input = barcode_data
+            chat_input = barcode_data
         else:
             st.error("No barcode detected in the image. Please try again.")
-            query_input = ""
-    else:
-        query_input = ""
 
-# Search functionality that displays details and stores nutrient data
-if st.button("Search") and query_input:
-    st.info("Searching for food details...")
-    usda_matches = similarity_search(query_input, usda_index, top_k=1)
-    if not usda_matches:
-        st.error("No matches found in USDA food details.")
-    else:
-        # USDA Food Details
-        food_details_formatted = format_usda_food_data(usda_matches)
-        st.subheader("USDA Food Details")
-        st.markdown(food_details_formatted)
-        
-        best_meta = usda_matches[0].get("metadata", {})
-        food_name = best_meta.get("FOOD_NAME", "Unknown")
-        ingredients_str = best_meta.get("FOOD_INGREDIENTS", "")
-        food_id = best_meta.get("FOOD_ID", "")
-        if food_id:
-            st.markdown(f"**Decoded Product Barcode:** {food_id}")
-        
-        # USDA Nutrient Details (stored in session_state for later graph generation)
-        nutrient_matches = similarity_search(food_name, nutrient_index, top_k=1)
-        if nutrient_matches:
-            nutrient_details_formatted = format_nutrient_data(nutrient_matches)
-            st.subheader("USDA Nutrient Details")
-            st.markdown(nutrient_details_formatted)
-        else:
-            st.info("No nutrient details found.")
-        
-        # Chemical Information for each ingredient
-        st.subheader("Chemical Information for Ingredients")
-        if ingredients_str:
-            ing_list = [x.strip() for x in ingredients_str.split(",") if x.strip()]
-            chem_results = []
-            for ing in ing_list: 
-                chem_matches = similarity_search(ing, chem_index, top_k=1)
-                if chem_matches:
-                    chem_info_formatted = format_chem_data(chem_matches)
-                    chem_results.append(f"**{ing}:**\n{chem_info_formatted}")
-                else:
-                    chem_results.append(f"**{ing}:** No chemical information found.\n")
-            st.markdown("\n".join(chem_results))
-        else:
-            st.info("No ingredient information available.")
-        
-        # Combined explanation via Together API using your prompt
-        prompt_text = generate_prompt(
-            food_name, 
-            food_details_formatted, 
-            nutrient_details_formatted, 
-            ingredients_str
-        )
-        st.subheader("Chemical, Allergen, and Health Analysis")
-        st.markdown("Generating explanation...")
-        explanation = together_chat(prompt_text)
-        st.markdown(explanation)
+# Initialize chat history if not present
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
-# Button to generate nutrient graphs (if nutrient data exists in session_state)
+# Single chat input (one box for conversation)
+if st.button("Send") and chat_input:
+    result = chat_chain({"question": chat_input})
+    answer = result.get("answer", "No answer generated.")
+    st.session_state.chat_history.append((chat_input, answer))
+
+# Display conversation history
+for i, (user_msg, bot_msg) in enumerate(st.session_state.chat_history, start=1):
+    st.markdown(f"**User ({i}):** {user_msg}")
+    st.markdown(f"**Assistant ({i}):** {bot_msg}")
+
+# Button to generate nutrient graphs (if nutrient data exists)
 if "nutrient_values" in st.session_state:
     if st.button("Generate Nutrient Graph"):
         nutrient_values = st.session_state["nutrient_values"]
@@ -338,22 +294,3 @@ if "nutrient_values" in st.session_state:
                 st.plotly_chart(fig)
         else:
             st.info("No nutrient data available to generate graphs.")
-
-####################################
-# Continuous Chat Interface using LangChain
-####################################
-st.markdown("---")
-st.subheader("Continuous Chat")
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-user_chat_input = st.text_input("Enter your follow-up query:")
-if st.button("Send Chat") and user_chat_input:
-    # Use the ConversationalRetrievalChain which maintains context
-    result = chat_chain({"question": user_chat_input})
-    answer = result.get("answer", "No answer generated.")
-    st.session_state.chat_history.append((user_chat_input, answer))
-    
-for i, (q, a) in enumerate(st.session_state.chat_history, start=1):
-    st.markdown(f"**User ({i}):** {q}")
-    st.markdown(f"**Assistant ({i}):** {a}")
