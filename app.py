@@ -163,6 +163,24 @@ class PineconeRetriever(BaseRetriever):
             if nutrient_matches:
                 nutrient_details_formatted = format_nutrient_data(nutrient_matches)
                 docs.append(Document(page_content=nutrient_details_formatted, metadata={"source": "Nutrient"}))
+                # Save nutrient values for graph generation in session state
+                nutrient_keys = [
+                    "CARBOHYDRATE, BY DIFFERENCE (G)",
+                    "FIBER, TOTAL DIETARY (G)",
+                    "PROTEIN (G)",
+                    "TOTAL SUGARS (G)",
+                    "TOTAL LIPID (FAT) (G)",
+                    "FATTY ACIDS, TOTAL SATURATED (G)"
+                ]
+                nutrient_values = {}
+                meta_nutrient = nutrient_matches[0].get("metadata", {})
+                for key in nutrient_keys:
+                    try:
+                        nutrient_values[key] = float(meta_nutrient.get(key, 0))
+                    except Exception:
+                        nutrient_values[key] = 0
+                # Store in session_state so the graph can be generated later
+                st.session_state["nutrient_values"] = nutrient_values
             else:
                 nutrient_details_formatted = "No nutrient details found."
             # Chemical Information for each ingredient
@@ -233,7 +251,7 @@ else:
     else:
         query_input = ""
 
-# Search functionality that displays details and graphs
+# Search functionality that displays details and stores nutrient data
 if st.button("Search") and query_input:
     st.info("Searching for food details...")
     usda_matches = similarity_search(query_input, usda_index, top_k=1)
@@ -252,57 +270,14 @@ if st.button("Search") and query_input:
         if food_id:
             st.markdown(f"**Decoded Product Barcode:** {food_id}")
         
-        # USDA Nutrient Details and Graphs
+        # USDA Nutrient Details (stored in session_state for later graph generation)
         nutrient_matches = similarity_search(food_name, nutrient_index, top_k=1)
         if nutrient_matches:
             nutrient_details_formatted = format_nutrient_data(nutrient_matches)
             st.subheader("USDA Nutrient Details")
             st.markdown(nutrient_details_formatted)
-            
-            # Prepare and display nutrient chart
-            nutrient_keys = [
-                "CARBOHYDRATE, BY DIFFERENCE (G)",
-                "FIBER, TOTAL DIETARY (G)",
-                "PROTEIN (G)",
-                "TOTAL SUGARS (G)",
-                "TOTAL LIPID (FAT) (G)",
-                "FATTY ACIDS, TOTAL SATURATED (G)"
-            ]
-            nutrient_values = {}
-            meta_nutrient = nutrient_matches[0].get("metadata", {})
-            for key in nutrient_keys:
-                try:
-                    nutrient_values[key] = float(meta_nutrient.get(key, 0))
-                except Exception:
-                    nutrient_values[key] = 0
-            if nutrient_values:
-                df_chart = pd.DataFrame(list(nutrient_values.items()), columns=["Nutrient", "Value"]).set_index("Nutrient")
-                st.subheader("Nutrient Chart")
-                st.bar_chart(df_chart)
-                
-                # Create nutrient comparison graph using WHO recommendations
-                who_recommendations = {
-                    "CARBOHYDRATE, BY DIFFERENCE (G)": 275,
-                    "FIBER, TOTAL DIETARY (G)": 25,
-                    "PROTEIN (G)": 50,
-                    "TOTAL SUGARS (G)": 25,
-                    "TOTAL LIPID (FAT) (G)": 70,
-                    "FATTY ACIDS, TOTAL SATURATED (G)": 20
-                }
-                comp_data = []
-                for nutrient, value in nutrient_values.items():
-                    who_value = who_recommendations.get(nutrient, None)
-                    if who_value is not None:
-                        comp_data.append({"Nutrient": nutrient, "Value": value, "Type": "Product"})
-                        comp_data.append({"Nutrient": nutrient, "Value": who_value, "Type": "WHO Recommended"})
-                if comp_data:
-                    df_comp = pd.DataFrame(comp_data)
-                    fig = px.bar(df_comp, x="Nutrient", y="Value", color="Type", barmode="group",
-                                 title="Nutrient Comparison: Product vs WHO Recommendations")
-                    st.plotly_chart(fig)
         else:
-            nutrient_details_formatted = "No nutrient details found."
-            st.info(nutrient_details_formatted)
+            st.info("No nutrient details found.")
         
         # Chemical Information for each ingredient
         st.subheader("Chemical Information for Ingredients")
@@ -332,6 +307,38 @@ if st.button("Search") and query_input:
         explanation = together_chat(prompt_text)
         st.markdown(explanation)
 
+# Button to generate nutrient graphs (if nutrient data exists in session_state)
+if "nutrient_values" in st.session_state:
+    if st.button("Generate Nutrient Graph"):
+        nutrient_values = st.session_state["nutrient_values"]
+        if nutrient_values:
+            df_chart = pd.DataFrame(list(nutrient_values.items()), columns=["Nutrient", "Value"]).set_index("Nutrient")
+            st.subheader("Nutrient Chart")
+            st.bar_chart(df_chart)
+            
+            # Create nutrient comparison graph using WHO recommendations
+            who_recommendations = {
+                "CARBOHYDRATE, BY DIFFERENCE (G)": 275,
+                "FIBER, TOTAL DIETARY (G)": 25,
+                "PROTEIN (G)": 50,
+                "TOTAL SUGARS (G)": 25,
+                "TOTAL LIPID (FAT) (G)": 70,
+                "FATTY ACIDS, TOTAL SATURATED (G)": 20
+            }
+            comp_data = []
+            for nutrient, value in nutrient_values.items():
+                who_value = who_recommendations.get(nutrient, None)
+                if who_value is not None:
+                    comp_data.append({"Nutrient": nutrient, "Value": value, "Type": "Product"})
+                    comp_data.append({"Nutrient": nutrient, "Value": who_value, "Type": "WHO Recommended"})
+            if comp_data:
+                df_comp = pd.DataFrame(comp_data)
+                fig = px.bar(df_comp, x="Nutrient", y="Value", color="Type", barmode="group",
+                             title="Nutrient Comparison: Product vs WHO Recommendations")
+                st.plotly_chart(fig)
+        else:
+            st.info("No nutrient data available to generate graphs.")
+
 ####################################
 # Continuous Chat Interface using LangChain
 ####################################
@@ -342,6 +349,7 @@ if "chat_history" not in st.session_state:
 
 user_chat_input = st.text_input("Enter your follow-up query:")
 if st.button("Send Chat") and user_chat_input:
+    # Use the ConversationalRetrievalChain which maintains context
     result = chat_chain({"question": user_chat_input})
     answer = result.get("answer", "No answer generated.")
     st.session_state.chat_history.append((user_chat_input, answer))
