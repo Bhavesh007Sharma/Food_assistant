@@ -1,5 +1,4 @@
 import os
-import time
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -25,7 +24,6 @@ CHEM_INDEX_HOST = os.getenv("CHEM_INDEX_HOST")
 # Initialize Pinecone indexes
 ####################################
 pc = Pinecone(api_key=PINECONE_API_KEY, environment="us-east-1")
-
 usda_index = pc.Index(name=USDA_INDEX_NAME)
 nutrient_index = pc.Index(name=NUTRIENT_INDEX_NAME)
 chem_index = pc.Index(name=CHEM_INDEX_NAME)
@@ -94,7 +92,7 @@ def together_chat(prompt):
         completion = client.chat.completions.create(
             model="meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
             messages=messages,
-            max_tokens=500
+            max_tokens=1000  # Increased token limit for a more detailed response
         )
         response = completion.choices[0].message.content
         return response.strip()
@@ -106,8 +104,8 @@ def together_chat(prompt):
 ####################################
 def generate_prompt(food_name, food_details, nutrient_details, ingredients_str):
     prompt = f"""
-You are an expert nutrition and ingredient assistant. Below is the detailed data for the food item **{food_name}**:
-    
+You are an expert nutritionist and food safety advisor with in-depth knowledge of USDA food data and dietary guidelines. Below is the data for the food item **{food_name}**:
+
 **USDA Food Details:**
 {food_details}
 
@@ -117,17 +115,16 @@ You are an expert nutrition and ingredient assistant. Below is the detailed data
 **Ingredients:**
 {ingredients_str if ingredients_str else "Not available"}
 
-Using the data above, please provide a clear, concise explanation covering the following:
-- A brief description of the food item.
-- A detailed nutrient breakdown, including macro- and micronutrients.
-- A comparison of the product's nutrient values with fixed World Health Organization (WHO) recommended daily allowances (see our fixed values in the app).
-- A thorough analysis of the ingredient composition, highlighting any potential allergens.
-- An evaluation of any hazardous effects associated with preservatives or additives present in the dish, including known adverse health effects.
-- Include complete chemical insights where applicable (e.g., show chemical structures using inline LaTeX equations such as $E=mc^2$).
+Based on the above information, please provide a concise explanation that includes:
+- A brief overview of the food item.
+- A detailed breakdown of macro- and micronutrients.
+- An analysis of any hazardous effects associated with chemicals, additives, or preservatives present in the food.
+- Identification of potential allergens within the ingredient list.
+- Suggestions for healthier alternative options, explaining why they might be nutritionally superior.
+- Use inline LaTeX (wrapped in single dollar signs, e.g. `$E=mc^2$`) for any chemical structures if needed.
+- If the data provided is insufficient, respond with "I'm sorry, I don't have enough information to accurately answer that question."
 
-Please format your response using markdown with headings and bullet points, and provide some example follow-up questions in *italics* (for example, *Does this food contain any allergens?*, *What is the calorie count per serving?*).
-
-If the provided data is insufficient, reply with "I'm sorry, I don't have enough information to accurately answer that question."
+Format your response using markdown with headings and bullet points.
     """
     return prompt
 
@@ -137,7 +134,7 @@ If the provided data is insufficient, reply with "I'm sorry, I don't have enough
 st.title("USDA & Chemical Ingredient Assistant")
 st.markdown(
     """
-Enter a food item (e.g., **Oreo Cookies**) to retrieve USDA details, nutrient information, chemical insights, and hazard evaluations.
+Enter a food item (e.g., **Oreo Cookies**) to retrieve USDA details, nutrient information, chemical insights, allergen analysis, hazardous effects, and healthier alternatives.
 """
 )
 
@@ -145,6 +142,7 @@ query_input = st.text_input("Enter a food item:")
 
 if st.button("Search") and query_input:
     st.info("Searching for food details...")
+    
     # 1) Retrieve USDA Food Details
     usda_matches = similarity_search(query_input, usda_index, top_k=1)
     if not usda_matches:
@@ -183,12 +181,12 @@ if st.button("Search") and query_input:
                     nutrient_values[key] = 0
             
             if nutrient_values:
-                # Basic nutrient chart
+                # Display basic nutrient chart
                 df_chart = pd.DataFrame(list(nutrient_values.items()), columns=["Nutrient", "Value"]).set_index("Nutrient")
                 st.subheader("Nutrient Chart")
                 st.bar_chart(df_chart)
                 
-                # Fixed WHO recommendation values
+                # Fixed WHO recommendation values for comparison
                 who_recommendations = {
                     "CARBOHYDRATE, BY DIFFERENCE (G)": 275,
                     "FIBER, TOTAL DIETARY (G)": 25,
@@ -235,7 +233,7 @@ if st.button("Search") and query_input:
             nutrient_details_formatted, 
             ingredients_str
         )
-        st.subheader("Chemical & Nutrient Explanation")
+        st.subheader("Chemical, Allergen, and Health Analysis")
         st.markdown("Generating explanation...")
         explanation = together_chat(prompt_text)
         st.markdown(explanation)
