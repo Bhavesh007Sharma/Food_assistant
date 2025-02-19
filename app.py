@@ -163,7 +163,7 @@ class PineconeRetriever(BaseRetriever):
             if nutrient_matches:
                 nutrient_details_formatted = format_nutrient_data(nutrient_matches)
                 docs.append(Document(page_content=nutrient_details_formatted, metadata={"source": "Nutrient"}))
-                # Save nutrient values for graph generation in session state
+                # Save nutrient values for graph generation in session_state
                 nutrient_keys = [
                     "CARBOHYDRATE, BY DIFFERENCE (G)",
                     "FIBER, TOTAL DIETARY (G)",
@@ -218,22 +218,23 @@ chat_chain = ConversationalRetrievalChain.from_llm(
 )
 
 ####################################
-# Streamlit UI - Single Chat Interface & Graph Button
+# Streamlit UI - Chat Interface & Nutrient Graph Button
 ####################################
 st.title("USDA & Chemical Ingredient Assistant with Continuous Chat")
 st.markdown(
     """
 Enter your query below to retrieve USDA details, nutrient information, chemical insights, allergen analysis, and healthier alternatives.
-The conversation is continuous and the context is maintained (like ChatGPT).
+The conversation is continuous and context is maintained (like ChatGPT).
     """
 )
 
-# Input mode selection for text or barcode image
+# Select input mode
 input_mode = st.radio("Select input mode:", ["Text", "Barcode Image"])
 
-chat_input = ""
+# Prepare query variable
+query_input = ""
 if input_mode == "Text":
-    chat_input = st.text_input("Enter your query:")
+    query_input = st.chat_input("Enter your query:")
 else:
     uploaded_file = st.file_uploader("Upload a barcode image", type=["png", "jpg", "jpeg"])
     if uploaded_file is not None:
@@ -244,24 +245,31 @@ else:
         if barcodes:
             barcode_data = barcodes[0].data.decode("utf-8")
             st.success(f"Decoded Barcode: {barcode_data}")
-            chat_input = barcode_data
+            query_input = barcode_data
         else:
-            st.error("No barcode detected in the image. Please try again.")
+            st.error("No barcode detected. Please try again.")
 
-# Initialize chat history if not present
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+# Initialize conversation history using st.session_state.messages
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {"role": "assistant", "content": "Hello! I'm here to help you with USDA food details and more. How can I assist you today?"}
+    ]
 
-# Single chat input (one box for conversation)
-if st.button("Send") and chat_input:
-    result = chat_chain({"question": chat_input})
-    answer = result.get("answer", "No answer generated.")
-    st.session_state.chat_history.append((chat_input, answer))
+# If user enters a query, process it using the LangChain conversational chain
+if query_input:
+    # Append user's message
+    st.session_state.messages.append({"role": "user", "content": query_input})
+    # Get answer from the conversational chain
+    result = chat_chain({"question": query_input})
+    answer = result.get("answer", "I'm sorry, I could not generate an answer.")
+    st.session_state.messages.append({"role": "assistant", "content": answer})
 
-# Display conversation history
-for i, (user_msg, bot_msg) in enumerate(st.session_state.chat_history, start=1):
-    st.markdown(f"**User ({i}):** {user_msg}")
-    st.markdown(f"**Assistant ({i}):** {bot_msg}")
+# Display the conversation using Streamlit's chat components
+for msg in st.session_state.messages:
+    if msg["role"] == "assistant":
+        st.chat_message("assistant", avatar="🤖").write(msg["content"])
+    else:
+        st.chat_message("user", avatar="🙂").write(msg["content"])
 
 # Button to generate nutrient graphs (if nutrient data exists)
 if "nutrient_values" in st.session_state:
@@ -289,8 +297,10 @@ if "nutrient_values" in st.session_state:
                     comp_data.append({"Nutrient": nutrient, "Value": who_value, "Type": "WHO Recommended"})
             if comp_data:
                 df_comp = pd.DataFrame(comp_data)
-                fig = px.bar(df_comp, x="Nutrient", y="Value", color="Type", barmode="group",
-                             title="Nutrient Comparison: Product vs WHO Recommendations")
+                fig = px.bar(
+                    df_comp, x="Nutrient", y="Value", color="Type",
+                    barmode="group", title="Nutrient Comparison: Product vs WHO Recommendations"
+                )
                 st.plotly_chart(fig)
         else:
             st.info("No nutrient data available to generate graphs.")
