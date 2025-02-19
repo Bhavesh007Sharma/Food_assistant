@@ -9,6 +9,12 @@ from together import Together
 from pinecone import Pinecone  # Updated import
 from pyzbar.pyzbar import decode  # For barcode decoding
 
+# LangChain imports
+from langchain.llms.base import LLM
+from langchain.chains import ConversationalRetrievalChain
+from langchain.memory import ConversationBufferMemory
+from langchain.docstore.document import Document
+
 # Load environment variables
 load_dotenv()
 
@@ -34,7 +40,7 @@ chem_index = pc.Index(name=CHEM_INDEX_NAME)
 ####################################
 # Similarity Search Function
 ####################################
-def similarity_search(query, index, top_k=5):
+def similarity_search(query, index, top_k=1):
     emb_response = pc.inference.embed(
         model="multilingual-e5-large",
         inputs=[query],
@@ -84,7 +90,31 @@ def format_chem_data(matches):
     return formatted
 
 ####################################
-# Chat Completion using Together API
+# Your Original Prompt Generation Function
+####################################
+def generate_prompt(food_name, food_details, nutrient_details, ingredients_str):
+    prompt = f"""
+You are an expert nutritionist and food safety advisor with in-depth knowledge of USDA food data and dietary guidelines. Below is the data for the food item **{food_name}**:
+**USDA Food Details:**
+{food_details}
+**Nutrient Information:**
+{nutrient_details}
+**Ingredients:**
+{ingredients_str if ingredients_str else "Not available"}
+Based on the above information, please provide a concise explanation that includes:
+- A brief overview of the food item.
+- A detailed breakdown of macro- and micronutrients.
+- An analysis of any hazardous effects associated with chemicals, additives, or preservatives present in the food.
+- Identification of potential allergens within the ingredient list.
+- Suggestions for healthier alternative options, explaining why they might be nutritionally superior.
+- Use inline LaTeX (wrapped in single dollar signs, e.g. `$E=mc^2$`) for any chemical structures if needed.
+- If the data provided is insufficient, respond with "I'm sorry, I don't have enough information to accurately answer that question."
+Format your response using markdown with headings and bullet points.
+    """
+    return prompt
+
+####################################
+# Together Chat Completion Function
 ####################################
 def together_chat(prompt):
     if not TOGETHER_API_KEY:
@@ -95,7 +125,7 @@ def together_chat(prompt):
         completion = client.chat.completions.create(
             model="meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
             messages=messages,
-            max_tokens=1000  # Increased token limit for a more detailed response
+            max_tokens=1000
         )
         response = completion.choices[0].message.content
         return response.strip()
@@ -103,45 +133,74 @@ def together_chat(prompt):
         return f"Error: {e}"
 
 ####################################
-# Improved Prompt Generation
+# Custom Together LLM for LangChain
 ####################################
-def generate_prompt(food_name, food_details, nutrient_details, ingredients_str):
-    prompt = f"""
-You are an expert nutritionist and food safety advisor with in-depth knowledge of USDA food data and dietary guidelines. Below is the data for the food item **{food_name}**:
-
-**USDA Food Details:**
-{food_details}
-
-**Nutrient Information:**
-{nutrient_details}
-
-**Ingredients:**
-{ingredients_str if ingredients_str else "Not available"}
-
-Based on the above information, please provide a concise explanation that includes:
-- A brief overview of the food item.
-- A detailed breakdown of macro- and micronutrients.
-- An analysis of any hazardous effects associated with chemicals, additives, or preservatives present in the food.
-- Identification of potential allergens within the ingredient list.
-- Suggestions for healthier alternative options, explaining why they might be nutritionally superior.
-- Use inline LaTeX (wrapped in single dollar signs, e.g. `$E=mc^2$`) for any chemical structures if needed.
-- If the data provided is insufficient, respond with "I'm sorry, I don't have enough information to accurately answer that question."
-
-Format your response using markdown with headings and bullet points.
-    """
-    return prompt
+class TogetherLLM(LLM):
+    def _call(self, prompt, stop=None):
+        return together_chat(prompt)
+    
+    @property
+    def _llm_type(self):
+        return "together"
 
 ####################################
-# Streamlit UI
+# Custom Retriever for LangChain (Pinecone-based)
 ####################################
-st.title("USDA & Chemical Ingredient Assistant")
+class PineconeRetriever:
+    def get_relevant_documents(self, query):
+        docs = []
+        # USDA Food Details
+        usda_matches = similarity_search(query, usda_index, top_k=1)
+        if usda_matches:
+            food_details_formatted = format_usda_food_data(usda_matches)
+            docs.append(Document(page_content=food_details_formatted, metadata={"source": "USDA"}))
+            best_meta = usda_matches[0].get("metadata", {})
+            food_name = best_meta.get("FOOD_NAME", "Unknown Food")
+            ingredients_str = best_meta.get("FOOD_INGREDIENTS", "")
+            # USDA Nutrient Details
+            nutrient_matches = similarity_search(food_name, nutrient_index, top_k=1)
+            if nutrient_matches:
+                nutrient_details_formatted = format_nutrient_data(nutrient_matches)
+                docs.append(Document(page_content=nutrient_details_formatted, metadata={"source": "Nutrient"}))
+            else:
+                nutrient_details_formatted = "No nutrient details found."
+            # Chemical Information for each ingredient
+            if ingredients_str:
+                ing_list = [x.strip() for x in ingredients_str.split(",") if x.strip()]
+                chem_results = []
+                for ing in ing_list:
+                    chem_matches = similarity_search(ing, chem_index, top_k=1)
+                    if chem_matches:
+                        chem_info_formatted = format_chem_data(chem_matches)
+                        chem_results.append(f"**{ing}:**\n{chem_info_formatted}")
+                    else:
+                        chem_results.append(f"**{ing}:** No chemical information found.\n")
+                chem_combined = "\n".join(chem_results)
+                docs.append(Document(page_content=chem_combined, metadata={"source": "Chem"}))
+            # Generate detailed prompt document
+            prompt_text = generate_prompt(food_name, food_details_formatted, nutrient_details_formatted, ingredients_str)
+            docs.append(Document(page_content=prompt_text, metadata={"source": "Prompt"}))
+        return docs
+
+####################################
+# Initialize LangChain LLM, Memory & Retrieval Chain using Together API
+####################################
+llm = TogetherLLM()
+memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+retriever = PineconeRetriever()
+chat_chain = ConversationalRetrievalChain.from_llm(llm, retriever=retriever, memory=memory, chain_type="stuff")
+
+####################################
+# Streamlit UI - Search and Continuous Chat
+####################################
+st.title("USDA & Chemical Ingredient Assistant with Continuous Chat")
 st.markdown(
     """
-Enter a food item (e.g., **Oreo Cookies**) to retrieve USDA details, nutrient information, chemical insights, allergen analysis, hazardous effects, and healthier alternatives.
+Enter a food item (e.g., **Oreo Cookies**) or upload a barcode image to retrieve USDA details, nutrient information, chemical insights, allergen analysis, hazardous effects, and healthier alternatives.
     """
 )
 
-# Choose input mode: text or barcode image via live decoding using OpenCV.
+# Choose input mode: text or barcode image
 input_mode = st.radio("Select input mode:", ["Text", "Barcode Image"])
 
 if input_mode == "Text":
@@ -149,14 +208,12 @@ if input_mode == "Text":
 else:
     uploaded_file = st.file_uploader("Upload a barcode image", type=["png", "jpg", "jpeg"])
     if uploaded_file is not None:
-        # Convert uploaded file to a numpy array and decode using OpenCV.
+        # Decode the image
         file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
         image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
         st.image(image, caption="Uploaded Barcode Image", use_column_width=True)
-        # Decode the barcode from the image using Pyzbar.
         barcodes = decode(image)
         if barcodes:
-            # Use the first decoded barcode.
             barcode_data = barcodes[0].data.decode("utf-8")
             st.success(f"Decoded Barcode: {barcode_data}")
             query_input = barcode_data
@@ -166,35 +223,33 @@ else:
     else:
         query_input = ""
 
+# Search functionality that displays details and graphs
 if st.button("Search") and query_input:
     st.info("Searching for food details...")
-    
-    # 1) Retrieve USDA Food Details using the query_input (which can be a product name or barcode)
     usda_matches = similarity_search(query_input, usda_index, top_k=1)
     if not usda_matches:
         st.error("No matches found in USDA food details.")
     else:
+        # USDA Food Details
         food_details_formatted = format_usda_food_data(usda_matches)
         st.subheader("USDA Food Details")
         st.markdown(food_details_formatted)
         
-        best_match_meta = usda_matches[0].get("metadata", {})
-        food_name = best_match_meta.get("FOOD_NAME", "Unknown")
-        ingredients_str = best_match_meta.get("FOOD_INGREDIENTS", "")
-        
-        # Display the barcode image using OpenCV decoding result (if available)
-        food_id = best_match_meta.get("FOOD_ID", "")
+        best_meta = usda_matches[0].get("metadata", {})
+        food_name = best_meta.get("FOOD_NAME", "Unknown")
+        ingredients_str = best_meta.get("FOOD_INGREDIENTS", "")
+        food_id = best_meta.get("FOOD_ID", "")
         if food_id:
             st.markdown(f"**Decoded Product Barcode:** {food_id}")
         
-        # 2) Retrieve USDA Nutrient Details
+        # USDA Nutrient Details and Graphs
         nutrient_matches = similarity_search(food_name, nutrient_index, top_k=1)
         if nutrient_matches:
             nutrient_details_formatted = format_nutrient_data(nutrient_matches)
             st.subheader("USDA Nutrient Details")
             st.markdown(nutrient_details_formatted)
             
-            # Prepare nutrient chart data from selected nutrient keys
+            # Prepare and display nutrient chart
             nutrient_keys = [
                 "CARBOHYDRATE, BY DIFFERENCE (G)",
                 "FIBER, TOTAL DIETARY (G)",
@@ -210,14 +265,12 @@ if st.button("Search") and query_input:
                     nutrient_values[key] = float(meta_nutrient.get(key, 0))
                 except Exception:
                     nutrient_values[key] = 0
-            
             if nutrient_values:
-                # Display basic nutrient chart
                 df_chart = pd.DataFrame(list(nutrient_values.items()), columns=["Nutrient", "Value"]).set_index("Nutrient")
                 st.subheader("Nutrient Chart")
                 st.bar_chart(df_chart)
                 
-                # Fixed WHO recommendation values for comparison
+                # Create nutrient comparison graph using WHO recommendations
                 who_recommendations = {
                     "CARBOHYDRATE, BY DIFFERENCE (G)": 275,
                     "FIBER, TOTAL DIETARY (G)": 25,
@@ -241,7 +294,7 @@ if st.button("Search") and query_input:
             nutrient_details_formatted = "No nutrient details found."
             st.info(nutrient_details_formatted)
         
-        # 3) Retrieve Chemical Information for Each Ingredient
+        # Chemical Information for each ingredient
         st.subheader("Chemical Information for Ingredients")
         if ingredients_str:
             ing_list = [x.strip() for x in ingredients_str.split(",") if x.strip()]
@@ -257,7 +310,7 @@ if st.button("Search") and query_input:
         else:
             st.info("No ingredient information available.")
         
-        # 4) Combined Explanation via Together Chat Completion
+        # Combined explanation via Together API using your prompt
         prompt_text = generate_prompt(
             food_name, 
             food_details_formatted, 
@@ -268,3 +321,21 @@ if st.button("Search") and query_input:
         st.markdown("Generating explanation...")
         explanation = together_chat(prompt_text)
         st.markdown(explanation)
+
+####################################
+# Continuous Chat Interface using LangChain
+####################################
+st.markdown("---")
+st.subheader("Continuous Chat")
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+user_chat_input = st.text_input("Enter your follow-up query:")
+if st.button("Send Chat") and user_chat_input:
+    result = chat_chain({"question": user_chat_input})
+    answer = result.get("answer", "No answer generated.")
+    st.session_state.chat_history.append((user_chat_input, answer))
+    
+for i, (q, a) in enumerate(st.session_state.chat_history, start=1):
+    st.markdown(f"**User ({i}):** {q}")
+    st.markdown(f"**Assistant ({i}):** {a}")
