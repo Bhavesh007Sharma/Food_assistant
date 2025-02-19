@@ -3,15 +3,14 @@ import time
 import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
-import openai
-from pinecone import Pinecone  # Updated import (removed grpc)
+from together import Together
+from pinecone import Pinecone  # Updated import
 
 # Load environment variables
 load_dotenv()
 
 # Retrieve keys and endpoints from .env
-# (Using the same variable for Hugging Face API key as before)
-HF_API_KEY = os.getenv("HF_API_KEY")
+TOGETHER_API_KEY = os.getenv("SAMBANOVA_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 
 USDA_INDEX_NAME = os.getenv("USDA_INDEX_NAME")
@@ -20,10 +19,6 @@ CHEM_INDEX_NAME = os.getenv("CHEM_INDEX_NAME")
 USDA_INDEX_HOST = os.getenv("USDA_INDEX_HOST")
 NUTRIENT_INDEX_HOST = os.getenv("NUTRIENT_INDEX_HOST")
 CHEM_INDEX_HOST = os.getenv("CHEM_INDEX_HOST")
-
-# Hugging Face Inference API configuration for chat completions
-HF_BASE_URL = "https://router.huggingface.co/together"
-HF_MODEL_NAME = "mistralai/Mistral-Small-24B-Instruct-2501"
 
 ####################################
 # Initialize Pinecone indexes
@@ -88,27 +83,21 @@ def format_chem_data(matches):
     return formatted
 
 ####################################
-# Chat Completion using Hugging Face Inference API
+# Chat Completion using Together API
 ####################################
-def hf_chat(prompt):
-    if not HF_API_KEY:
-        return "Error: Missing Hugging Face API key."
+def together_chat(prompt):
+    if not TOGETHER_API_KEY:
+        return "Error: Missing Together API key."
     try:
-        openai.api_base = HF_BASE_URL
-        openai.api_key = HF_API_KEY
-        response = openai.ChatCompletion.create(
-            model=HF_MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=500,
-            stream=True
+        client = Together(api_key=TOGETHER_API_KEY)
+        messages = [{"role": "user", "content": prompt}]
+        completion = client.chat.completions.create(
+            model="meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+            messages=messages,
+            max_tokens=500
         )
-        full_response = ""
-        for chunk in response:
-            if "choices" in chunk and chunk.choices[0].delta:
-                delta = chunk.choices[0].delta
-                if "content" in delta:
-                    full_response += delta["content"]
-        return full_response.strip()
+        response = completion.choices[0].message.content
+        return response.strip()
     except Exception as e:
         return f"Error: {e}"
 
@@ -197,7 +186,7 @@ if st.button("Search") and query_input:
         if ingredients_str:
             ing_list = [x.strip() for x in ingredients_str.split(",") if x.strip()]
             chem_results = []
-            for ing in ing_list:
+            for ing in ing_list: 
                 chem_matches = similarity_search(ing, chem_index, top_k=1)
                 if chem_matches:
                     chem_info_formatted = format_chem_data(chem_matches)
@@ -208,7 +197,7 @@ if st.button("Search") and query_input:
         else:
             st.info("No ingredient information available.")
         
-        # 4) Combined Explanation via Hugging Face Chat Completion
+        # 4) Combined Explanation via Together Chat Completion
         prompt_text = generate_prompt(
             food_name, 
             food_details_formatted, 
@@ -217,5 +206,5 @@ if st.button("Search") and query_input:
         )
         st.subheader("Chemical & Nutrient Explanation")
         st.markdown("Generating explanation...")
-        explanation = hf_chat(prompt_text)
+        explanation = together_chat(prompt_text)
         st.markdown(explanation)
