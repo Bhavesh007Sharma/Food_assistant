@@ -2,6 +2,7 @@ import os
 import time
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 from dotenv import load_dotenv
 from together import Together
 from pinecone import Pinecone  # Updated import
@@ -25,7 +26,6 @@ CHEM_INDEX_HOST = os.getenv("CHEM_INDEX_HOST")
 ####################################
 pc = Pinecone(api_key=PINECONE_API_KEY, environment="us-east-1")
 
-# Removed the 'host' parameters for non-gRPC version usage
 usda_index = pc.Index(name=USDA_INDEX_NAME)
 nutrient_index = pc.Index(name=NUTRIENT_INDEX_NAME)
 chem_index = pc.Index(name=CHEM_INDEX_NAME)
@@ -107,18 +107,26 @@ def together_chat(prompt):
 def generate_prompt(food_name, food_details, nutrient_details, ingredients_str):
     prompt = f"""
 You are an expert nutrition and ingredient assistant. Below is the detailed data for the food item **{food_name}**:
+    
 **USDA Food Details:**
 {food_details}
+
 **Nutrient Information:**
 {nutrient_details}
+
 **Ingredients:**
 {ingredients_str if ingredients_str else "Not available"}
+
 Using the data above, please provide a clear, concise explanation covering the following:
 - A brief description of the food item.
 - A detailed nutrient breakdown, including macro- and micronutrients.
-- An analysis of the ingredient composition and any potential allergens.
-- Relevant chemical insights related to the ingredients.
-Please format your response using markdown with headings, bullet points, and, where needed, inline LaTeX equations (wrapped in single dollar signs, e.g. $E=mc^2$). Also, provide some example follow-up questions in *italics* (for example, *Does this food contain any allergens?*, *What is the calorie count per serving?*).
+- A comparison of the product's nutrient values with fixed World Health Organization (WHO) recommended daily allowances (see our fixed values in the app).
+- A thorough analysis of the ingredient composition, highlighting any potential allergens.
+- An evaluation of any hazardous effects associated with preservatives or additives present in the dish, including known adverse health effects.
+- Include complete chemical insights where applicable (e.g., show chemical structures using inline LaTeX equations such as $E=mc^2$).
+
+Please format your response using markdown with headings and bullet points, and provide some example follow-up questions in *italics* (for example, *Does this food contain any allergens?*, *What is the calorie count per serving?*).
+
 If the provided data is insufficient, reply with "I'm sorry, I don't have enough information to accurately answer that question."
     """
     return prompt
@@ -129,7 +137,7 @@ If the provided data is insufficient, reply with "I'm sorry, I don't have enough
 st.title("USDA & Chemical Ingredient Assistant")
 st.markdown(
     """
-Enter a food item (e.g., **Oreo Cookies**) to retrieve USDA details, nutrient information, and chemical insights.
+Enter a food item (e.g., **Oreo Cookies**) to retrieve USDA details, nutrient information, chemical insights, and hazard evaluations.
 """
 )
 
@@ -173,10 +181,33 @@ if st.button("Search") and query_input:
                     nutrient_values[key] = float(meta_nutrient.get(key, 0))
                 except Exception:
                     nutrient_values[key] = 0
+            
             if nutrient_values:
+                # Basic nutrient chart
                 df_chart = pd.DataFrame(list(nutrient_values.items()), columns=["Nutrient", "Value"]).set_index("Nutrient")
                 st.subheader("Nutrient Chart")
                 st.bar_chart(df_chart)
+                
+                # Fixed WHO recommendation values
+                who_recommendations = {
+                    "CARBOHYDRATE, BY DIFFERENCE (G)": 275,
+                    "FIBER, TOTAL DIETARY (G)": 25,
+                    "PROTEIN (G)": 50,
+                    "TOTAL SUGARS (G)": 25,
+                    "TOTAL LIPID (FAT) (G)": 70,
+                    "FATTY ACIDS, TOTAL SATURATED (G)": 20
+                }
+                comp_data = []
+                for nutrient, value in nutrient_values.items():
+                    who_value = who_recommendations.get(nutrient, None)
+                    if who_value is not None:
+                        comp_data.append({"Nutrient": nutrient, "Value": value, "Type": "Product"})
+                        comp_data.append({"Nutrient": nutrient, "Value": who_value, "Type": "WHO Recommended"})
+                if comp_data:
+                    df_comp = pd.DataFrame(comp_data)
+                    fig = px.bar(df_comp, x="Nutrient", y="Value", color="Type", barmode="group",
+                                 title="Nutrient Comparison: Product vs WHO Recommendations")
+                    st.plotly_chart(fig)
         else:
             nutrient_details_formatted = "No nutrient details found."
             st.info(nutrient_details_formatted)
