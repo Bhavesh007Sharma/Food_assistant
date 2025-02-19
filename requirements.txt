@@ -15,4 +15,4 @@ together
 plotly
 opencv-python-headless
 pyzbar
-zbar
+libzbar-dev
