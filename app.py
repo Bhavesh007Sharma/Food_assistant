@@ -17,10 +17,9 @@ from langchain.docstore.document import Document
 from langchain_core.retrievers import BaseRetriever
 from typing import List, Any, Dict
 
-# Load environment variables
+# --- Load environment variables ---
 load_dotenv()
 
-# Retrieve keys and endpoints from .env
 TOGETHER_API_KEY = os.getenv("SAMBANOVA_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 USDA_INDEX_NAME = os.getenv("USDA_INDEX_NAME")
@@ -163,7 +162,7 @@ class PineconeRetriever(BaseRetriever):
             if nutrient_matches:
                 nutrient_details_formatted = format_nutrient_data(nutrient_matches)
                 docs.append(Document(page_content=nutrient_details_formatted, metadata={"source": "Nutrient"}))
-                # Save nutrient values for graph generation in session_state
+                # Save nutrient values for graph generation in session state
                 nutrient_keys = [
                     "CARBOHYDRATE, BY DIFFERENCE (G)",
                     "FIBER, TOTAL DIETARY (G)",
@@ -208,17 +207,23 @@ class PineconeRetriever(BaseRetriever):
         return self.get_relevant_documents(query, **kwargs)
 
 ####################################
-# Initialize LangChain LLM, Memory & Conversational Chain
+# Persistent Conversational Chain Setup
 ####################################
-llm = TogetherLLM()
-memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-retriever = PineconeRetriever()
-chat_chain = ConversationalRetrievalChain.from_llm(
-    llm, retriever=retriever, memory=memory, chain_type="stuff"
-)
+if "chat_chain" not in st.session_state:
+    st.session_state.chat_chain = ConversationalRetrievalChain.from_llm(
+        TogetherLLM(),
+        retriever=PineconeRetriever(),
+        memory=ConversationBufferMemory(memory_key="chat_history", return_messages=True),
+        chain_type="stuff"
+    )
+if "messages" not in st.session_state:
+    # Preload a welcome message
+    st.session_state.messages = [
+        {"role": "assistant", "content": "Hello! I'm here to help you with USDA food details and more. How can I assist you today?"}
+    ]
 
 ####################################
-# Streamlit UI - Chat Interface & Nutrient Graph Button
+# Streamlit UI - Single Chat Interface & Nutrient Graph Button
 ####################################
 st.title("USDA & Chemical Ingredient Assistant with Continuous Chat")
 st.markdown(
@@ -231,7 +236,7 @@ The conversation is continuous and context is maintained (like ChatGPT).
 # Select input mode
 input_mode = st.radio("Select input mode:", ["Text", "Barcode Image"])
 
-# Prepare query variable
+# Get user input (either via chat or barcode)
 query_input = ""
 if input_mode == "Text":
     query_input = st.chat_input("Enter your query:")
@@ -249,18 +254,12 @@ else:
         else:
             st.error("No barcode detected. Please try again.")
 
-# Initialize conversation history using st.session_state.messages
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": "Hello! I'm here to help you with USDA food details and more. How can I assist you today?"}
-    ]
-
-# If user enters a query, process it using the LangChain conversational chain
+# Process user query if provided
 if query_input:
-    # Append user's message
+    # Append the user's message to persistent messages
     st.session_state.messages.append({"role": "user", "content": query_input})
-    # Get answer from the conversational chain
-    result = chat_chain({"question": query_input})
+    # Use the persistent chain to get an answer (the chain's internal memory will maintain context)
+    result = st.session_state.chat_chain({"question": query_input})
     answer = result.get("answer", "I'm sorry, I could not generate an answer.")
     st.session_state.messages.append({"role": "assistant", "content": answer})
 
