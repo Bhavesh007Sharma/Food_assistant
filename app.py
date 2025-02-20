@@ -221,19 +221,62 @@ if "chat_chain" not in st.session_state:
 if "messages" not in st.session_state:
     # Preload a welcome message
     st.session_state.messages = [
-        {"role": "assistant", "content": "Hello! I'm here to help you with USDA food details and more. How can I assist you today?"}
+        {"role": "assistant", "content": "Hello! I'm here to help you with nutritional insights and food safety. How can I assist you today?"}
     ]
 
 ####################################
-# Streamlit UI - Single Chat Interface & Nutrient Graph Button
+# Custom CSS and Header Image
 ####################################
-st.title("USDA & Chemical Ingredient Assistant with Continuous Chat")
 st.markdown(
     """
-Enter your query below to retrieve USDA details, nutrient information, chemical insights, allergen analysis, and healthier alternatives.
-The conversation is continuous and context is maintained (like ChatGPT).
-    """
+    <style>
+    body {
+        background: #f0f2f6;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .main {
+        background: #ffffff;
+        padding: 2rem;
+        border-radius: 10px;
+        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+    }
+    .stButton>button {
+        background-color: #4CAF50;
+        color: white;
+        padding: 0.5em 1em;
+        border: none;
+        border-radius: 5px;
+        font-size: 1rem;
+    }
+    .stRadio > label {
+        font-weight: bold;
+        font-size: 1.1rem;
+    }
+    .header-text {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
+
+# Display header image and updated title
+st.image("https://i.imgur.com/ExdKOOz.png", width=150)  # Replace URL with your desired header image
+st.markdown(
+    """
+    <div class="header-text">
+      <h1>Nutritional Insights & Food Safety Assistant</h1>
+      <p>Enter your query to get detailed USDA food data, nutrient insights, chemical analysis, and healthy recipe suggestions.</p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+####################################
+# Streamlit UI - Chat Interface & Nutrient Graph Button
+####################################
+st.markdown('<div class="main">', unsafe_allow_html=True)
 
 # Select input mode
 input_mode = st.radio("Select input mode:", ["Text", "Barcode Image"])
@@ -263,7 +306,7 @@ if query_input:
     answer = result.get("answer", "I'm sorry, I could not generate an answer.")
     st.session_state.messages.append({"role": "assistant", "content": answer})
 
-# Display the conversation using Streamlit's chat components
+# Display conversation
 for msg in st.session_state.messages:
     if msg["role"] == "assistant":
         st.chat_message("assistant", avatar="🤖").write(msg["content"])
@@ -279,7 +322,7 @@ if "nutrient_values" in st.session_state:
             st.subheader("Nutrient Chart")
             st.bar_chart(df_chart)
             
-            # Create nutrient comparison graph using WHO recommendations
+            # Nutrient comparison graph using WHO recommendations
             who_recommendations = {
                 "CARBOHYDRATE, BY DIFFERENCE (G)": 275,
                 "FIBER, TOTAL DIETARY (G)": 25,
@@ -304,8 +347,8 @@ if "nutrient_values" in st.session_state:
         else:
             st.info("No nutrient data available to generate graphs.")
 
-# New Section: Home Made Food
-st.markdown("---")
+# New Section: Home Made Food Analysis
+st.markdown("<hr>", unsafe_allow_html=True)
 st.subheader("Home Made Food Analysis")
 home_query = st.text_input("Enter your homemade food description (e.g. '3lb carrots and a chicken sandwich'):")
 
@@ -325,7 +368,6 @@ if st.button("Submit Home Made Food Query"):
             
             items = data.get("items", [])
             if items:
-                # Prepare data for plotting: for each nutrient, create a dataframe comparing items.
                 nutrient_keys = ["calories", "serving_size_g", "fat_total_g", "fat_saturated_g",
                                    "protein_g", "sodium_mg", "potassium_mg", "cholesterol_mg",
                                    "carbohydrates_total_g", "fiber_g", "sugar_g"]
@@ -344,7 +386,6 @@ if st.button("Submit Home Made Food Query"):
             else:
                 st.error("No items found in API response.")
             
-            # Create a prompt for the Together AI LLM integrating exercise and recipe instructions.
             prompt = f"""
 You are a nutrition and fitness expert. Based on the following food items and their nutrient details:
 {json.dumps(items, indent=2)}
@@ -358,3 +399,5 @@ Format your response in markdown with headings and bullet points.
             st.markdown(llm_response)
         else:
             st.error(f"Error: {response.status_code} {response.text}")
+
+st.markdown("</div>", unsafe_allow_html=True)
