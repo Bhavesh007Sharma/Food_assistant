@@ -4,6 +4,7 @@ import numpy as np
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import requests
 import json
 from dotenv import load_dotenv
@@ -225,23 +226,25 @@ if "messages" not in st.session_state:
     ]
 
 ####################################
-# Custom CSS and Header Image
+# Custom CSS, Background & Header Images
 ####################################
 st.markdown(
     """
     <style>
     body {
-        background: #f0f2f6;
+        background: linear-gradient(135deg, #667eea, #764ba2);
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: #333;
     }
     .main {
         background: #ffffff;
         padding: 2rem;
         border-radius: 10px;
         box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
     }
     .stButton>button {
-        background-color: #4CAF50;
+        background-color: #ff6b6b;
         color: white;
         padding: 0.5em 1em;
         border: none;
@@ -254,20 +257,21 @@ st.markdown(
     }
     .header-text {
         text-align: center;
-        margin-bottom: 2rem;
+        margin-bottom: 1rem;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# Display header image and updated title
-st.image("https://i.imgur.com/ExdKOOz.png", width=150)  # Replace URL with your desired header image
+# Display header images and updated title
+st.image("https://i.imgur.com/ExdKOOz.png", width=150)  # Main header image; replace as desired
+st.image("https://i.imgur.com/z4d4kWk.png", width=300)  # Additional decorative image
 st.markdown(
     """
     <div class="header-text">
       <h1>Nutritional Insights & Food Safety Assistant</h1>
-      <p>Enter your query to get detailed USDA food data, nutrient insights, chemical analysis, and healthy recipe suggestions.</p>
+      <p>Discover detailed USDA food data, nutrient insights, chemical analysis, and healthy recipe suggestions tailored for your needs.</p>
     </div>
     """,
     unsafe_allow_html=True
@@ -319,7 +323,7 @@ if "nutrient_values" in st.session_state:
         nutrient_values = st.session_state["nutrient_values"]
         if nutrient_values:
             df_chart = pd.DataFrame(list(nutrient_values.items()), columns=["Nutrient", "Value"]).set_index("Nutrient")
-            st.subheader("Nutrient Chart")
+            st.subheader("Nutrient Bar Chart")
             st.bar_chart(df_chart)
             
             # Nutrient comparison graph using WHO recommendations
@@ -368,6 +372,7 @@ if st.button("Submit Home Made Food Query"):
             
             items = data.get("items", [])
             if items:
+                # Bar chart for nutrient breakdown
                 nutrient_keys = ["calories", "serving_size_g", "fat_total_g", "fat_saturated_g",
                                    "protein_g", "sodium_mg", "potassium_mg", "cholesterol_mg",
                                    "carbohydrates_total_g", "fiber_g", "sugar_g"]
@@ -383,9 +388,34 @@ if st.button("Submit Home Made Food Query"):
                 fig2 = px.bar(df_plot, x="Nutrient", y="Value", color="Food", barmode="group",
                               title="Nutrient Breakdown for Home Made Food Items")
                 st.plotly_chart(fig2)
+                
+                # Radar (spider) chart for a more advanced view
+                # We will plot one trace per food item across selected nutrients.
+                radar_fig = go.Figure()
+                selected_nutrients = ["calories", "protein_g", "fat_total_g", "carbohydrates_total_g", "fiber_g"]
+                for item in items:
+                    food_name = item.get("name", "Unknown")
+                    values = [item.get(nutr, 0) for nutr in selected_nutrients]
+                    # Close the loop for radar chart by repeating the first value.
+                    values += [values[0]]
+                    radar_fig.add_trace(go.Scatterpolar(
+                        r=values,
+                        theta=selected_nutrients + [selected_nutrients[0]],
+                        fill='toself',
+                        name=food_name
+                    ))
+                radar_fig.update_layout(
+                    polar=dict(
+                        radialaxis=dict(visible=True)
+                    ),
+                    showlegend=True,
+                    title="Radar Chart: Nutrient Comparison for Home Made Food"
+                )
+                st.plotly_chart(radar_fig)
             else:
                 st.error("No items found in API response.")
             
+            # Create a prompt for the Together AI LLM integrating exercise and recipe instructions.
             prompt = f"""
 You are a nutrition and fitness expert. Based on the following food items and their nutrient details:
 {json.dumps(items, indent=2)}
