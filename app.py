@@ -226,27 +226,28 @@ if "messages" not in st.session_state:
     ]
 
 ####################################
-# Custom CSS, Background & Header Images
+# Custom CSS, Enhanced Background & Header Image
 ####################################
 st.markdown(
     """
     <style>
     body {
-        background: linear-gradient(135deg, #667eea, #764ba2);
+        background: linear-gradient(135deg, #FFB347, #FFCC33);
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         color: #333;
     }
     .main {
-        background: #ffffff;
+        background: rgba(255, 255, 255, 0.9);
         padding: 2rem;
-        border-radius: 10px;
-        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
-        margin-bottom: 2rem;
+        border-radius: 15px;
+        box-shadow: 0px 6px 15px rgba(0, 0, 0, 0.15);
+        margin: 2rem auto;
+        max-width: 1200px;
     }
     .stButton>button {
-        background-color: #ff6b6b;
+        background-color: #e76f51;
         color: white;
-        padding: 0.5em 1em;
+        padding: 0.6em 1.2em;
         border: none;
         border-radius: 5px;
         font-size: 1rem;
@@ -264,14 +265,13 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Display header images and updated title
-st.image("https://i.imgur.com/ExdKOOz.png", width=150)  # Main header image; replace as desired
-st.image("https://i.imgur.com/z4d4kWk.png", width=300)  # Additional decorative image
+# Use a single, nutrition-themed header image (from Unsplash)
+st.image("https://images.unsplash.com/photo-1556911073-52527ac4373d?ixlib=rb-1.2.1&auto=format&fit=crop&w=1500&q=80", width=1200)
 st.markdown(
     """
     <div class="header-text">
       <h1>Nutritional Insights & Food Safety Assistant</h1>
-      <p>Discover detailed USDA food data, nutrient insights, chemical analysis, and healthy recipe suggestions tailored for your needs.</p>
+      <p>Discover detailed USDA food data, nutrient insights, chemical analysis, and healthy recipe suggestions tailored for you.</p>
     </div>
     """,
     unsafe_allow_html=True
@@ -390,13 +390,11 @@ if st.button("Submit Home Made Food Query"):
                 st.plotly_chart(fig2)
                 
                 # Radar (spider) chart for a more advanced view
-                # We will plot one trace per food item across selected nutrients.
                 radar_fig = go.Figure()
                 selected_nutrients = ["calories", "protein_g", "fat_total_g", "carbohydrates_total_g", "fiber_g"]
                 for item in items:
                     food_name = item.get("name", "Unknown")
                     values = [item.get(nutr, 0) for nutr in selected_nutrients]
-                    # Close the loop for radar chart by repeating the first value.
                     values += [values[0]]
                     radar_fig.add_trace(go.Scatterpolar(
                         r=values,
