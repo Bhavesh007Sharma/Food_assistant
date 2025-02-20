@@ -304,54 +304,57 @@ if "nutrient_values" in st.session_state:
         else:
             st.info("No nutrient data available to generate graphs.")
 
-# New Button: Home Made Food
-if st.button("Home Made Food"):
-    st.subheader("Home Made Food Nutrient Analysis")
-    # API call to CalorieNinjas
-    api_url = 'https://api.calorieninjas.com/v1/nutrition?query='
-    # Sample query; adjust as needed or allow user input
-    query = '3lb carrots and a chicken sandwich'
-    headers = {'X-Api-Key': 'xZy/uYgnYZyoJAiAAl1obw==FG9eY7kclEvmkgMY'}
-    response = requests.get(api_url + query, headers=headers)
-    
-    if response.status_code == requests.codes.ok:
-        data = response.json()
-        st.write("### API Response Data")
-        st.json(data)
+# New Section: Home Made Food
+st.markdown("---")
+st.subheader("Home Made Food Analysis")
+home_query = st.text_input("Enter your homemade food description (e.g. '3lb carrots and a chicken sandwich'):")
+
+if st.button("Submit Home Made Food Query"):
+    if not home_query:
+        st.error("Please enter a query for your homemade food.")
+    else:
+        st.info("Fetching data from CalorieNinjas API...")
+        api_url = 'https://api.calorieninjas.com/v1/nutrition?query='
+        headers = {'X-Api-Key': 'xZy/uYgnYZyoJAiAAl1obw==FG9eY7kclEvmkgMY'}  # Replace with your actual API key
+        response = requests.get(api_url + home_query, headers=headers)
         
-        items = data.get("items", [])
-        if items:
-            # Prepare data for plotting: for each nutrient, create a dataframe comparing items.
-            # Define a list of nutrients to plot.
-            nutrient_keys = ["calories", "serving_size_g", "fat_total_g", "fat_saturated_g",
-                               "protein_g", "sodium_mg", "potassium_mg", "cholesterol_mg",
-                               "carbohydrates_total_g", "fiber_g", "sugar_g"]
-            plot_data = []
-            for item in items:
-                for key in nutrient_keys:
-                    plot_data.append({
-                        "Food": item.get("name", "Unknown"),
-                        "Nutrient": key,
-                        "Value": item.get(key, 0)
-                    })
-            df_plot = pd.DataFrame(plot_data)
-            fig2 = px.bar(df_plot, x="Nutrient", y="Value", color="Food", barmode="group",
-                          title="Nutrient Breakdown for Home Made Food Items")
-            st.plotly_chart(fig2)
-        else:
-            st.error("No items found in API response.")
-        
-        # Create a prompt for the Together AI LLM integrating exercise and recipe instructions.
-        prompt = f"""
+        if response.status_code == requests.codes.ok:
+            data = response.json()
+            st.write("### API Response Data")
+            st.json(data)
+            
+            items = data.get("items", [])
+            if items:
+                # Prepare data for plotting: for each nutrient, create a dataframe comparing items.
+                nutrient_keys = ["calories", "serving_size_g", "fat_total_g", "fat_saturated_g",
+                                   "protein_g", "sodium_mg", "potassium_mg", "cholesterol_mg",
+                                   "carbohydrates_total_g", "fiber_g", "sugar_g"]
+                plot_data = []
+                for item in items:
+                    for key in nutrient_keys:
+                        plot_data.append({
+                            "Food": item.get("name", "Unknown"),
+                            "Nutrient": key,
+                            "Value": item.get(key, 0)
+                        })
+                df_plot = pd.DataFrame(plot_data)
+                fig2 = px.bar(df_plot, x="Nutrient", y="Value", color="Food", barmode="group",
+                              title="Nutrient Breakdown for Home Made Food Items")
+                st.plotly_chart(fig2)
+            else:
+                st.error("No items found in API response.")
+            
+            # Create a prompt for the Together AI LLM integrating exercise and recipe instructions.
+            prompt = f"""
 You are a nutrition and fitness expert. Based on the following food items and their nutrient details:
 {json.dumps(items, indent=2)}
 Please provide:
-- An exercise integration plan that calculates approximate calorie requirements based on user activity levels and suggests how much calories need to be burned.
-- A recipe suggestion and step-by-step cooking instructions for a healthy meal using the available ingredients, ensuring the meal stays under a specified calorie limit.
+- An exercise integration plan that calculates approximate calorie requirements based on user activity levels and suggests how many calories need to be burned.
+- A recipe suggestion with step-by-step cooking instructions for a healthy meal using the available ingredients, ensuring the meal stays under a specified calorie limit.
 Format your response in markdown with headings and bullet points.
-        """
-        st.write("### LLM Generated Response")
-        llm_response = together_chat(prompt)
-        st.markdown(llm_response)
-    else:
-        st.error(f"Error: {response.status_code} {response.text}")
+            """
+            st.write("### LLM Generated Response")
+            llm_response = together_chat(prompt)
+            st.markdown(llm_response)
+        else:
+            st.error(f"Error: {response.status_code} {response.text}")
