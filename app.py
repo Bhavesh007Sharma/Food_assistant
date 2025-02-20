@@ -4,6 +4,8 @@ import numpy as np
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import requests
+import json
 from dotenv import load_dotenv
 from together import Together
 from pinecone import Pinecone  # Updated import
@@ -256,9 +258,7 @@ else:
 
 # Process user query if provided
 if query_input:
-    # Append the user's message to persistent messages
     st.session_state.messages.append({"role": "user", "content": query_input})
-    # Use the persistent chain to get an answer (the chain's internal memory will maintain context)
     result = st.session_state.chat_chain({"question": query_input})
     answer = result.get("answer", "I'm sorry, I could not generate an answer.")
     st.session_state.messages.append({"role": "assistant", "content": answer})
@@ -303,3 +303,55 @@ if "nutrient_values" in st.session_state:
                 st.plotly_chart(fig)
         else:
             st.info("No nutrient data available to generate graphs.")
+
+# New Button: Home Made Food
+if st.button("Home Made Food"):
+    st.subheader("Home Made Food Nutrient Analysis")
+    # API call to CalorieNinjas
+    api_url = 'https://api.calorieninjas.com/v1/nutrition?query='
+    # Sample query; adjust as needed or allow user input
+    query = '3lb carrots and a chicken sandwich'
+    headers = {'X-Api-Key': 'xZy/uYgnYZyoJAiAAl1obw==FG9eY7kclEvmkgMY'}
+    response = requests.get(api_url + query, headers=headers)
+    
+    if response.status_code == requests.codes.ok:
+        data = response.json()
+        st.write("### API Response Data")
+        st.json(data)
+        
+        items = data.get("items", [])
+        if items:
+            # Prepare data for plotting: for each nutrient, create a dataframe comparing items.
+            # Define a list of nutrients to plot.
+            nutrient_keys = ["calories", "serving_size_g", "fat_total_g", "fat_saturated_g",
+                               "protein_g", "sodium_mg", "potassium_mg", "cholesterol_mg",
+                               "carbohydrates_total_g", "fiber_g", "sugar_g"]
+            plot_data = []
+            for item in items:
+                for key in nutrient_keys:
+                    plot_data.append({
+                        "Food": item.get("name", "Unknown"),
+                        "Nutrient": key,
+                        "Value": item.get(key, 0)
+                    })
+            df_plot = pd.DataFrame(plot_data)
+            fig2 = px.bar(df_plot, x="Nutrient", y="Value", color="Food", barmode="group",
+                          title="Nutrient Breakdown for Home Made Food Items")
+            st.plotly_chart(fig2)
+        else:
+            st.error("No items found in API response.")
+        
+        # Create a prompt for the Together AI LLM integrating exercise and recipe instructions.
+        prompt = f"""
+You are a nutrition and fitness expert. Based on the following food items and their nutrient details:
+{json.dumps(items, indent=2)}
+Please provide:
+- An exercise integration plan that calculates approximate calorie requirements based on user activity levels and suggests how much calories need to be burned.
+- A recipe suggestion and step-by-step cooking instructions for a healthy meal using the available ingredients, ensuring the meal stays under a specified calorie limit.
+Format your response in markdown with headings and bullet points.
+        """
+        st.write("### LLM Generated Response")
+        llm_response = together_chat(prompt)
+        st.markdown(llm_response)
+    else:
+        st.error(f"Error: {response.status_code} {response.text}")
