@@ -226,62 +226,95 @@ if "messages" not in st.session_state:
     ]
 
 ####################################
-# Custom CSS, Enhanced Background & Header Image
+# Dark-Themed & Animated Gradient Background (Custom CSS)
 ####################################
 st.markdown(
     """
     <style>
+    /* Animate the gradient background */
+    @keyframes gradientBG {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
     body {
-        background: linear-gradient(135deg, #FFB347, #FFCC33);
+        background: linear-gradient(-45deg, #2E2E2E, #141414, #2E2E2E, #1F1F1F);
+        background-size: 400% 400%;
+        animation: gradientBG 15s ease infinite;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        color: #333;
+        color: #F8F8F8;
     }
     .main {
-        background: rgba(255, 255, 255, 0.9);
+        background: rgba(30, 30, 30, 0.9);
         padding: 2rem;
         border-radius: 15px;
-        box-shadow: 0px 6px 15px rgba(0, 0, 0, 0.15);
+        box-shadow: 0px 6px 15px rgba(0, 0, 0, 0.4);
         margin: 2rem auto;
         max-width: 1200px;
     }
     .stButton>button {
-        background-color: #e76f51;
+        background-color: #ff6b6b;
         color: white;
         padding: 0.6em 1.2em;
         border: none;
         border-radius: 5px;
         font-size: 1rem;
+        transition: background-color 0.3s ease;
+    }
+    .stButton>button:hover {
+        background-color: #ff5a5a;
     }
     .stRadio > label {
         font-weight: bold;
         font-size: 1.1rem;
+        color: #EAEAEA !important;
     }
     .header-text {
         text-align: center;
         margin-bottom: 1rem;
+    }
+    /* Override Streamlit's text color in some components */
+    .css-1u8p6ry p, .css-1u8p6ry span, .css-1u8p6ry div, .css-1u8p6ry label {
+        color: #F0F0F0 !important;
+    }
+    .css-1cpxkw7 {
+        color: #F8F8F8 !important;
+    }
+    /* Chat message styling */
+    .stChatMessage .stChatMessageContent {
+        background-color: #333333;
+        color: #FFFFFF;
+        border-radius: 10px;
+        padding: 1em;
+    }
+    .stChatMessage--user .stChatMessageContent {
+        background-color: #444444;
+    }
+    .stChatMessage--assistant .stChatMessageContent {
+        background-color: #3A3A3A;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# Use a single, nutrition-themed header image (from Unsplash)
-st.image("https://images.unsplash.com/photo-1556911073-52527ac4373d?ixlib=rb-1.2.1&auto=format&fit=crop&w=1500&q=80", width=1200)
+####################################
+# App Title & Description
+####################################
+st.markdown('<div class="main">', unsafe_allow_html=True)
 st.markdown(
     """
     <div class="header-text">
-      <h1>Nutritional Insights & Food Safety Assistant</h1>
-      <p>Discover detailed USDA food data, nutrient insights, chemical analysis, and healthy recipe suggestions tailored for you.</p>
+      <h1 style="color:#FEE440;">Nutritional Insights & Food Safety Assistant</h1>
+      <p>Discover detailed USDA food data, nutrient insights, chemical analysis, and healthy recipe suggestions in a sleek dark theme.</p>
     </div>
     """,
     unsafe_allow_html=True
 )
 
 ####################################
-# Streamlit UI - Chat Interface & Nutrient Graph Button
+# Streamlit UI - Chat Interface
 ####################################
-st.markdown('<div class="main">', unsafe_allow_html=True)
-
 # Select input mode
 input_mode = st.radio("Select input mode:", ["Text", "Barcode Image"])
 
@@ -317,7 +350,9 @@ for msg in st.session_state.messages:
     else:
         st.chat_message("user", avatar="🙂").write(msg["content"])
 
-# Button to generate nutrient graphs (if nutrient data exists)
+####################################
+# Nutrient Graph Button
+####################################
 if "nutrient_values" in st.session_state:
     if st.button("Generate Nutrient Graph"):
         nutrient_values = st.session_state["nutrient_values"]
@@ -351,7 +386,9 @@ if "nutrient_values" in st.session_state:
         else:
             st.info("No nutrient data available to generate graphs.")
 
-# New Section: Home Made Food Analysis
+####################################
+# Home Made Food Analysis Section
+####################################
 st.markdown("<hr>", unsafe_allow_html=True)
 st.subheader("Home Made Food Analysis")
 home_query = st.text_input("Enter your homemade food description (e.g. '3lb carrots and a chicken sandwich'):")
