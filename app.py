@@ -20,7 +20,7 @@ from langchain.docstore.document import Document
 from langchain_core.retrievers import BaseRetriever
 from typing import List, Any, Dict
 
-# --- Load environment variables ---
+# --- Load environment variables --
 load_dotenv()
 
 TOGETHER_API_KEY = os.getenv("SAMBANOVA_API_KEY")
