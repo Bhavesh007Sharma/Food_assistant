@@ -141,7 +141,7 @@ def together_chat(prompt):
 class TogetherLLM(LLM):
     def _call(self, prompt, stop=None):
         return together_chat(prompt)
-    
+
     @property
     def _llm_type(self):
         return "together"
@@ -188,7 +188,7 @@ class PineconeRetriever(BaseRetriever):
             if ingredients_str:
                 ing_list = [x.strip() for x in ingredients_str.split(",") if x.strip()]
                 chem_results = []
-                for ing in ing_list: 
+                for ing in ing_list:
                     chem_matches = similarity_search(ing, chem_index, top_k=1)
                     if chem_matches:
                         chem_info_formatted = format_chem_data(chem_matches)
@@ -336,12 +336,84 @@ else:
         else:
             st.error("No barcode detected. Please try again.")
 
+# Select query type
+query_type = st.selectbox("Select query type:", ["USDA Database Query", "Home Made Food Analysis"])
+
 # Process user query if provided
 if query_input:
     st.session_state.messages.append({"role": "user", "content": query_input})
-    result = st.session_state.chat_chain({"question": query_input})
-    answer = result.get("answer", "I'm sorry, I could not generate an answer.")
-    st.session_state.messages.append({"role": "assistant", "content": answer})
+    if query_type == "USDA Database Query":
+        result = st.session_state.chat_chain({"question": query_input})
+        answer = result.get("answer", "I'm sorry, I could not generate an answer.")
+        st.session_state.messages.append({"role": "assistant", "content": answer})
+    elif query_type == "Home Made Food Analysis":
+        st.info("Fetching data from CalorieNinjas API...")
+        api_url = 'https://api.calorieninjas.com/v1/nutrition?query='
+        headers = {'X-Api-Key': 'xZy/uYgnYZyoJAiAAl1obw==FG9eY7kclEvmkgMY'}  # Replace with your actual API key
+        response = requests.get(api_url + query_input, headers=headers)
+
+        if response.status_code == requests.codes.ok:
+            data = response.json()
+            st.write("### API Response Data")
+            st.json(data)
+
+            items = data.get("items", [])
+            if items:
+                # Bar chart for nutrient breakdown
+                nutrient_keys = ["calories", "serving_size_g", "fat_total_g", "fat_saturated_g",
+                                   "protein_g", "sodium_mg", "potassium_mg", "cholesterol_mg",
+                                   "carbohydrates_total_g", "fiber_g", "sugar_g"]
+                plot_data = []
+                for item in items:
+                    for key in nutrient_keys:
+                        plot_data.append({
+                            "Food": item.get("name", "Unknown"),
+                            "Nutrient": key,
+                            "Value": item.get(key, 0)
+                        })
+                df_plot = pd.DataFrame(plot_data)
+                fig2 = px.bar(df_plot, x="Nutrient", y="Value", color="Food", barmode="group",
+                              title="Nutrient Breakdown for Home Made Food Items")
+                st.plotly_chart(fig2)
+
+                # Radar (spider) chart for a more advanced view
+                radar_fig = go.Figure()
+                selected_nutrients = ["calories", "protein_g", "fat_total_g", "carbohydrates_total_g", "fiber_g"]
+                for item in items:
+                    food_name = item.get("name", "Unknown")
+                    values = [item.get(nutr, 0) for nutr in selected_nutrients]
+                    values += [values[0]]
+                    radar_fig.add_trace(go.Scatterpolar(
+                        r=values,
+                        theta=selected_nutrients + [selected_nutrients[0]],
+                        fill='toself',
+                        name=food_name
+                    ))
+                radar_fig.update_layout(
+                    polar=dict(
+                        radialaxis=dict(visible=True)
+                    ),
+                    showlegend=True,
+                    title="Radar Chart: Nutrient Comparison for Home Made Food"
+                )
+                st.plotly_chart(radar_fig)
+            else:
+                st.error("No items found in API response.")
+
+            # Create a prompt for the Together AI LLM integrating exercise and recipe instructions.
+            prompt = f"""
+You are a nutrition and fitness expert. Based on the following food items and their nutrient details:
+{json.dumps(items, indent=2)}
+Please provide:
+- An exercise integration plan that calculates approximate calorie requirements based on user activity levels and suggests how many calories need to be burned.
+- A recipe suggestion with step-by-step cooking instructions for a healthy meal using the available ingredients, ensuring the meal stays under a specified calorie limit.
+Format your response in markdown with headings and bullet points.
+            """
+            st.write("### LLM Generated Response")
+            llm_response = together_chat(prompt)
+            st.markdown(llm_response)
+        else:
+            st.error(f"Error: {response.status_code} {response.text}")
 
 # Display conversation
 for msg in st.session_state.messages:
@@ -360,7 +432,7 @@ if "nutrient_values" in st.session_state:
             df_chart = pd.DataFrame(list(nutrient_values.items()), columns=["Nutrient", "Value"]).set_index("Nutrient")
             st.subheader("Nutrient Bar Chart")
             st.bar_chart(df_chart)
-            
+
             # Nutrient comparison graph using WHO recommendations
             who_recommendations = {
                 "CARBOHYDRATE, BY DIFFERENCE (G)": 275,
@@ -385,84 +457,5 @@ if "nutrient_values" in st.session_state:
                 st.plotly_chart(fig)
         else:
             st.info("No nutrient data available to generate graphs.")
-
-####################################
-# Home Made Food Analysis Section
-####################################
-st.markdown("<hr>", unsafe_allow_html=True)
-st.subheader("Home Made Food Analysis")
-home_query = st.text_input("Enter your homemade food description (e.g. '3lb carrots and a chicken sandwich'):")
-
-if st.button("Submit Home Made Food Query"):
-    if not home_query:
-        st.error("Please enter a query for your homemade food.")
-    else:
-        st.info("Fetching data from CalorieNinjas API...")
-        api_url = 'https://api.calorieninjas.com/v1/nutrition?query='
-        headers = {'X-Api-Key': 'xZy/uYgnYZyoJAiAAl1obw==FG9eY7kclEvmkgMY'}  # Replace with your actual API key
-        response = requests.get(api_url + home_query, headers=headers)
-        
-        if response.status_code == requests.codes.ok:
-            data = response.json()
-            st.write("### API Response Data")
-            st.json(data)
-            
-            items = data.get("items", [])
-            if items:
-                # Bar chart for nutrient breakdown
-                nutrient_keys = ["calories", "serving_size_g", "fat_total_g", "fat_saturated_g",
-                                   "protein_g", "sodium_mg", "potassium_mg", "cholesterol_mg",
-                                   "carbohydrates_total_g", "fiber_g", "sugar_g"]
-                plot_data = []
-                for item in items:
-                    for key in nutrient_keys:
-                        plot_data.append({
-                            "Food": item.get("name", "Unknown"),
-                            "Nutrient": key,
-                            "Value": item.get(key, 0)
-                        })
-                df_plot = pd.DataFrame(plot_data)
-                fig2 = px.bar(df_plot, x="Nutrient", y="Value", color="Food", barmode="group",
-                              title="Nutrient Breakdown for Home Made Food Items")
-                st.plotly_chart(fig2)
-                
-                # Radar (spider) chart for a more advanced view
-                radar_fig = go.Figure()
-                selected_nutrients = ["calories", "protein_g", "fat_total_g", "carbohydrates_total_g", "fiber_g"]
-                for item in items:
-                    food_name = item.get("name", "Unknown")
-                    values = [item.get(nutr, 0) for nutr in selected_nutrients]
-                    values += [values[0]]
-                    radar_fig.add_trace(go.Scatterpolar(
-                        r=values,
-                        theta=selected_nutrients + [selected_nutrients[0]],
-                        fill='toself',
-                        name=food_name
-                    ))
-                radar_fig.update_layout(
-                    polar=dict(
-                        radialaxis=dict(visible=True)
-                    ),
-                    showlegend=True,
-                    title="Radar Chart: Nutrient Comparison for Home Made Food"
-                )
-                st.plotly_chart(radar_fig)
-            else:
-                st.error("No items found in API response.")
-            
-            # Create a prompt for the Together AI LLM integrating exercise and recipe instructions.
-            prompt = f"""
-You are a nutrition and fitness expert. Based on the following food items and their nutrient details:
-{json.dumps(items, indent=2)}
-Please provide:
-- An exercise integration plan that calculates approximate calorie requirements based on user activity levels and suggests how many calories need to be burned.
-- A recipe suggestion with step-by-step cooking instructions for a healthy meal using the available ingredients, ensuring the meal stays under a specified calorie limit.
-Format your response in markdown with headings and bullet points.
-            """
-            st.write("### LLM Generated Response")
-            llm_response = together_chat(prompt)
-            st.markdown(llm_response)
-        else:
-            st.error(f"Error: {response.status_code} {response.text}")
 
 st.markdown("</div>", unsafe_allow_html=True)
