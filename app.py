@@ -458,4 +458,49 @@ if "nutrient_values" in st.session_state:
         else:
             st.info("No nutrient data available to generate graphs.")
 
+####################################
+# Additional Functionalities
+####################################
+
+# Meal Plan Generator
+if st.button("Generate Meal Plan"):
+    calorie_goal = st.number_input("Enter your daily calorie goal:", min_value=500, max_value=5000, value=2000)
+    diet_preferences = st.text_input("Enter any diet preferences (e.g., vegan, gluten-free):")
+    if st.button("Submit"):
+        prompt = f"""
+You are a nutritionist. Generate a daily meal plan with a total calorie goal of {calorie_goal} calories. Consider the following diet preferences: {diet_preferences}.
+Provide a detailed meal plan with breakfast, lunch, dinner, and snacks, including calorie counts for each meal.
+Format your response in markdown with headings and bullet points.
+        """
+        meal_plan_response = together_chat(prompt)
+        st.markdown(meal_plan_response)
+
+# Ingredient Substitution
+if st.button("Suggest Ingredient Substitutions"):
+    ingredient_list = st.text_area("Enter the list of ingredients (one per line):")
+    if st.button("Submit Ingredients"):
+        prompt = f"""
+You are a nutritionist. Suggest healthier or allergy-friendly substitutions for the following ingredients:
+{ingredient_list}
+Provide a detailed list of substitutions with explanations.
+Format your response in markdown with headings and bullet points.
+        """
+        substitution_response = together_chat(prompt)
+        st.markdown(substitution_response)
+
+# Recipe Personalization
+if st.button("Personalize Recipe"):
+    dietary_restrictions = st.text_input("Enter any dietary restrictions (e.g., lactose intolerant, nut allergy):")
+    favorite_cuisines = st.text_input("Enter your favorite cuisines (e.g., Italian, Mexican):")
+    if st.button("Submit Preferences"):
+        prompt = f"""
+You are a chef. Tailor a recipe to the following dietary restrictions and favorite cuisines:
+Dietary Restrictions: {dietary_restrictions}
+Favorite Cuisines: {favorite_cuisines}
+Provide a detailed recipe with step-by-step cooking instructions.
+Format your response in markdown with headings and bullet points.
+        """
+        recipe_response = together_chat(prompt)
+        st.markdown(recipe_response)
+
 st.markdown("</div>", unsafe_allow_html=True)
