@@ -462,13 +462,15 @@ if "nutrient_values" in st.session_state:
 # Personalized Meal Button
 ####################################
 if st.button("Personalize Your Meal"):
-    with st.expander("Enter Meal Preferences"):
+    with st.form(key='meal_preferences'):
         calorie_goal = st.number_input("Enter your daily calorie goal:", min_value=500, max_value=5000, value=2000)
         diet_preferences = st.text_input("Enter any diet preferences (e.g., vegan, gluten-free):")
         dietary_restrictions = st.text_input("Enter any dietary restrictions (e.g., lactose intolerant, nut allergy):")
         favorite_cuisines = st.text_input("Enter your favorite cuisines (e.g., Italian, Mexican):")
-        if st.button("Submit Meal Preferences"):
-            prompt = f"""
+        submit_button = st.form_submit_button(label='Submit Meal Preferences')
+
+    if submit_button:
+        prompt = f"""
 You are a nutritionist and chef. Generate a personalized meal plan based on the following preferences:
 - **Calorie Goal:** {calorie_goal} calories
 - **Diet Preferences:** {diet_preferences}
@@ -476,8 +478,8 @@ You are a nutritionist and chef. Generate a personalized meal plan based on the 
 - **Favorite Cuisines:** {favorite_cuisines}
 Provide a detailed meal plan with breakfast, lunch, dinner, and snacks, including calorie counts for each meal.
 Format your response in markdown with headings and bullet points.
-            """
-            meal_plan_response = together_chat(prompt)
-            st.markdown(meal_plan_response)
+        """
+        meal_plan_response = together_chat(prompt)
+        st.markdown(meal_plan_response)
 
 st.markdown("</div>", unsafe_allow_html=True)
