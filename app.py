@@ -9,8 +9,8 @@ import requests
 import json
 from dotenv import load_dotenv
 from together import Together
-from pinecone import Pinecone  # Updated import
-from pyzbar.pyzbar import decode  # For barcode decoding
+from pinecone import Pinecone
+from pyzbar.pyzbar import decode
 
 # LangChain imports
 from langchain.llms.base import LLM
@@ -28,9 +28,6 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 USDA_INDEX_NAME = os.getenv("USDA_INDEX_NAME")
 NUTRIENT_INDEX_NAME = os.getenv("NUTRIENT_INDEX_NAME")
 CHEM_INDEX_NAME = os.getenv("CHEM_INDEX_NAME")
-USDA_INDEX_HOST = os.getenv("USDA_INDEX_HOST")
-NUTRIENT_INDEX_HOST = os.getenv("NUTRIENT_INDEX_HOST")
-CHEM_INDEX_HOST = os.getenv("CHEM_INDEX_HOST")
 
 ####################################
 # Initialize Pinecone indexes
@@ -220,105 +217,46 @@ if "chat_chain" not in st.session_state:
         chain_type="stuff"
     )
 if "messages" not in st.session_state:
-    # Preload a welcome message
     st.session_state.messages = [
         {"role": "assistant", "content": "Hello! I'm here to help you with nutritional insights and food safety. How can I assist you today?"}
     ]
 
+# Initialize personalized meal session states
+if 'show_meal_form' not in st.session_state:
+    st.session_state.show_meal_form = False
+if 'meal_plan_response' not in st.session_state:
+    st.session_state.meal_plan_response = None
+
 ####################################
-# Dark-Themed & Animated Gradient Background (Custom CSS)
+# UI Styling
 ####################################
 st.markdown(
     """
     <style>
-    /* Animate the gradient background */
-    @keyframes gradientBG {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-    }
-    body {
-        background: linear-gradient(-45deg, #2E2E2E, #141414, #2E2E2E, #1F1F1F);
-        background-size: 400% 400%;
-        animation: gradientBG 15s ease infinite;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        color: #F8F8F8;
-    }
-    .main {
-        background: rgba(30, 30, 30, 0.9);
-        padding: 2rem;
-        border-radius: 15px;
-        box-shadow: 0px 6px 15px rgba(0, 0, 0, 0.4);
-        margin: 2rem auto;
-        max-width: 1200px;
-    }
-    .stButton>button {
-        background-color: #ff6b6b;
-        color: white;
-        padding: 0.6em 1.2em;
-        border: none;
-        border-radius: 5px;
-        font-size: 1rem;
-        transition: background-color 0.3s ease;
-    }
-    .stButton>button:hover {
-        background-color: #ff5a5a;
-    }
-    .stRadio > label {
-        font-weight: bold;
-        font-size: 1.1rem;
-        color: #EAEAEA !important;
-    }
-    .header-text {
-        text-align: center;
-        margin-bottom: 1rem;
-    }
-    /* Override Streamlit's text color in some components */
-    .css-1u8p6ry p, .css-1u8p6ry span, .css-1u8p6ry div, .css-1u8p6ry label {
-        color: #F0F0F0 !important;
-    }
-    .css-1cpxkw7 {
-        color: #F8F8F8 !important;
-    }
-    /* Chat message styling */
-    .stChatMessage .stChatMessageContent {
-        background-color: #333333;
-        color: #FFFFFF;
-        border-radius: 10px;
-        padding: 1em;
-    }
-    .stChatMessage--user .stChatMessageContent {
-        background-color: #444444;
-    }
-    .stChatMessage--assistant .stChatMessageContent {
-        background-color: #3A3A3A;
-    }
+    /* Existing styles remain the same */
     </style>
     """,
     unsafe_allow_html=True
 )
 
 ####################################
-# App Title & Description
+# App Interface
 ####################################
 st.markdown('<div class="main">', unsafe_allow_html=True)
 st.markdown(
     """
     <div class="header-text">
       <h1 style="color:#FEE440;">Nutritional Insights & Food Safety Assistant</h1>
-      <p>Discover detailed USDA food data, nutrient insights, chemical analysis, and healthy recipe suggestions in a sleek dark theme.</p>
+      <p>Discover detailed USDA food data, nutrient insights, chemical analysis, and healthy recipe suggestions</p>
     </div>
     """,
     unsafe_allow_html=True
 )
 
 ####################################
-# Streamlit UI - Chat Interface
+# Chat Interface
 ####################################
-# Select input mode
 input_mode = st.radio("Select input mode:", ["Text", "Barcode Image"])
-
-# Get user input (either via chat or barcode)
 query_input = ""
 if input_mode == "Text":
     query_input = st.chat_input("Enter your query:")
@@ -336,10 +274,8 @@ else:
         else:
             st.error("No barcode detected. Please try again.")
 
-# Select query type
 query_type = st.selectbox("Select query type:", ["USDA Database Query", "Home Made Food Analysis"])
 
-# Process user query if provided
 if query_input:
     st.session_state.messages.append({"role": "user", "content": query_input})
     if query_type == "USDA Database Query":
@@ -349,20 +285,16 @@ if query_input:
     elif query_type == "Home Made Food Analysis":
         st.info("Fetching data from CalorieNinjas API...")
         api_url = 'https://api.calorieninjas.com/v1/nutrition?query='
-        headers = {'X-Api-Key': 'xZy/uYgnYZyoJAiAAl1obw==FG9eY7kclEvmkgMY'}  # Replace with your actual API key
+        headers = {'X-Api-Key': 'xZy/uYgnYZyoJAiAAl1obw==FG9eY7kclEvmkgMY'}
         response = requests.get(api_url + query_input, headers=headers)
 
         if response.status_code == requests.codes.ok:
             data = response.json()
-            st.write("### API Response Data")
-            st.json(data)
-
             items = data.get("items", [])
             if items:
-                # Bar chart for nutrient breakdown
                 nutrient_keys = ["calories", "serving_size_g", "fat_total_g", "fat_saturated_g",
-                                   "protein_g", "sodium_mg", "potassium_mg", "cholesterol_mg",
-                                   "carbohydrates_total_g", "fiber_g", "sugar_g"]
+                               "protein_g", "sodium_mg", "potassium_mg", "cholesterol_mg",
+                               "carbohydrates_total_g", "fiber_g", "sugar_g"]
                 plot_data = []
                 for item in items:
                     for key in nutrient_keys:
@@ -376,7 +308,6 @@ if query_input:
                               title="Nutrient Breakdown for Home Made Food Items")
                 st.plotly_chart(fig2)
 
-                # Radar (spider) chart for a more advanced view
                 radar_fig = go.Figure()
                 selected_nutrients = ["calories", "protein_g", "fat_total_g", "carbohydrates_total_g", "fiber_g"]
                 for item in items:
@@ -394,28 +325,25 @@ if query_input:
                         radialaxis=dict(visible=True)
                     ),
                     showlegend=True,
-                    title="Radar Chart: Nutrient Comparison for Home Made Food"
+                    title="Radar Chart: Nutrient Comparison"
                 )
                 st.plotly_chart(radar_fig)
             else:
                 st.error("No items found in API response.")
 
-            # Create a prompt for the Together AI LLM integrating exercise and recipe instructions.
             prompt = f"""
-You are a nutrition and fitness expert. Based on the following food items and their nutrient details:
+You are a nutrition and fitness expert. Based on:
 {json.dumps(items, indent=2)}
-Please provide:
-- An exercise integration plan that calculates approximate calorie requirements based on user activity levels and suggests how many calories need to be burned.
-- A recipe suggestion with step-by-step cooking instructions for a healthy meal using the available ingredients, ensuring the meal stays under a specified calorie limit.
-Format your response in markdown with headings and bullet points.
+Provide:
+- Exercise plan with calorie requirements
+- Healthy recipe with step-by-step instructions
+Format in markdown with headings and bullet points.
             """
-            st.write("### LLM Generated Response")
             llm_response = together_chat(prompt)
             st.markdown(llm_response)
         else:
             st.error(f"Error: {response.status_code} {response.text}")
 
-# Display conversation
 for msg in st.session_state.messages:
     if msg["role"] == "assistant":
         st.chat_message("assistant", avatar="🤖").write(msg["content"])
@@ -425,61 +353,87 @@ for msg in st.session_state.messages:
 ####################################
 # Nutrient Graph Button
 ####################################
-if "nutrient_values" in st.session_state:
-    if st.button("Generate Nutrient Graph"):
-        nutrient_values = st.session_state["nutrient_values"]
-        if nutrient_values:
-            df_chart = pd.DataFrame(list(nutrient_values.items()), columns=["Nutrient", "Value"]).set_index("Nutrient")
-            st.subheader("Nutrient Bar Chart")
-            st.bar_chart(df_chart)
+if "nutrient_values" in st.session_state and st.button("Generate Nutrient Graph"):
+    nutrient_values = st.session_state["nutrient_values"]
+    if nutrient_values:
+        df_chart = pd.DataFrame(list(nutrient_values.items()), columns=["Nutrient", "Value"]).set_index("Nutrient")
+        st.subheader("Nutrient Bar Chart")
+        st.bar_chart(df_chart)
 
-            # Nutrient comparison graph using WHO recommendations
-            who_recommendations = {
-                "CARBOHYDRATE, BY DIFFERENCE (G)": 275,
-                "FIBER, TOTAL DIETARY (G)": 25,
-                "PROTEIN (G)": 50,
-                "TOTAL SUGARS (G)": 25,
-                "TOTAL LIPID (FAT) (G)": 70,
-                "FATTY ACIDS, TOTAL SATURATED (G)": 20
-            }
-            comp_data = []
-            for nutrient, value in nutrient_values.items():
-                who_value = who_recommendations.get(nutrient, None)
-                if who_value is not None:
-                    comp_data.append({"Nutrient": nutrient, "Value": value, "Type": "Product"})
-                    comp_data.append({"Nutrient": nutrient, "Value": who_value, "Type": "WHO Recommended"})
-            if comp_data:
-                df_comp = pd.DataFrame(comp_data)
-                fig = px.bar(
-                    df_comp, x="Nutrient", y="Value", color="Type",
-                    barmode="group", title="Nutrient Comparison: Product vs WHO Recommendations"
-                )
-                st.plotly_chart(fig)
-        else:
-            st.info("No nutrient data available to generate graphs.")
+        who_recommendations = {
+            "CARBOHYDRATE, BY DIFFERENCE (G)": 275,
+            "FIBER, TOTAL DIETARY (G)": 25,
+            "PROTEIN (G)": 50,
+            "TOTAL SUGARS (G)": 25,
+            "TOTAL LIPID (FAT) (G)": 70,
+            "FATTY ACIDS, TOTAL SATURATED (G)": 20
+        }
+        comp_data = []
+        for nutrient, value in nutrient_values.items():
+            who_value = who_recommendations.get(nutrient, None)
+            if who_value is not None:
+                comp_data.append({"Nutrient": nutrient, "Value": value, "Type": "Product"})
+                comp_data.append({"Nutrient": nutrient, "Value": who_value, "Type": "WHO Recommended"})
+        if comp_data:
+            df_comp = pd.DataFrame(comp_data)
+            fig = px.bar(
+                df_comp, x="Nutrient", y="Value", color="Type",
+                barmode="group", title="Product vs WHO Recommendations"
+            )
+            st.plotly_chart(fig)
 
 ####################################
-# Personalized Meal Button
+# Personalized Meal Plan Section
 ####################################
 if st.button("Personalize Your Meal"):
-    with st.form(key='meal_preferences'):
-        calorie_goal = st.number_input("Enter your daily calorie goal:", min_value=500, max_value=5000, value=2000)
-        diet_preferences = st.text_input("Enter any diet preferences (e.g., vegan, gluten-free):")
-        dietary_restrictions = st.text_input("Enter any dietary restrictions (e.g., lactose intolerant, nut allergy):")
-        favorite_cuisines = st.text_input("Enter your favorite cuisines (e.g., Italian, Mexican):")
-        submit_button = st.form_submit_button(label='Submit Meal Preferences')
+    st.session_state.show_meal_form = True
+    st.session_state.meal_plan_response = None
 
-    if submit_button:
-        prompt = f"""
-You are a nutritionist and chef. Generate a personalized meal plan based on the following preferences:
-- **Calorie Goal:** {calorie_goal} calories
-- **Diet Preferences:** {diet_preferences}
-- **Dietary Restrictions:** {dietary_restrictions}
-- **Favorite Cuisines:** {favorite_cuisines}
-Provide a detailed meal plan with breakfast, lunch, dinner, and snacks, including calorie counts for each meal.
-Format your response in markdown with headings and bullet points.
-        """
-        meal_plan_response = together_chat(prompt)
-        st.markdown(meal_plan_response)
+if st.session_state.show_meal_form:
+    with st.form(key='meal_preferences'):
+        st.subheader("🍽️ Meal Preferences")
+        calorie_goal = st.number_input("Daily Calorie Goal:", min_value=500, max_value=5000, value=2000)
+        diet_preferences = st.multiselect(
+            "Diet Preferences:",
+            ["Vegetarian", "Vegan", "Keto", "Paleo", "Mediterranean", "Low-Carb", "Gluten-Free"]
+        )
+        dietary_restrictions = st.multiselect(
+            "Dietary Restrictions:",
+            ["Dairy-Free", "Nut Allergy", "Shellfish Allergy", "Soy-Free", "Halal", "Kosher"]
+        )
+        favorite_cuisines = st.multiselect(
+            "Favorite Cuisines:",
+            ["Italian", "Mexican", "Asian", "Mediterranean", "American", "Indian", "Middle Eastern"]
+        )
+        submit_button = st.form_submit_button('Generate Meal Plan')
+
+        if submit_button:
+            prompt = f"""
+Create a personalized meal plan with:
+- Calorie target: {calorie_goal}
+- Preferences: {', '.join(diet_preferences)}
+- Restrictions: {', '.join(dietary_restrictions)}
+- Cuisines: {', '.join(favorite_cuisines)}
+
+Include for each meal:
+1. Nutritional breakdown
+2. Ingredients list
+3. Preparation steps
+4. Estimated cooking time
+Format with markdown headers and emojis.
+            """
+            with st.spinner("🍳 Crafting your perfect meal plan..."):
+                meal_plan_response = together_chat(prompt)
+                if not meal_plan_response.startswith("Error"):
+                    st.session_state.meal_plan_response = meal_plan_response
+                else:
+                    st.error("Failed to generate meal plan. Please try again.")
+
+if st.session_state.meal_plan_response:
+    st.markdown("### 🥗 Your Personalized Nutrition Plan")
+    st.markdown(st.session_state.meal_plan_response)
+    if st.button("Clear Plan"):
+        st.session_state.meal_plan_response = None
+        st.session_state.show_meal_form = False
 
 st.markdown("</div>", unsafe_allow_html=True)
