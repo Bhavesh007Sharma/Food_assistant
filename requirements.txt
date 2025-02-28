@@ -17,3 +17,4 @@ opencv-python-headless
 pyzbar
 langchain
 langchain-core
+twilio
