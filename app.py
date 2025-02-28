@@ -490,16 +490,16 @@ Format with markdown headers and emojis.
                         st.error("Failed to generate meal plan. Please try again.")
 
     if st.session_state.meal_plan_response:
-        st.markdown(f"""
-        <div class="meal-plan-section">
-            <div class="custom-header" style="padding: 1rem; margin-bottom: 1.5rem;">
-                <h3>🥗 Your Personalized Nutrition Plan</h3>
-            </div>
-            <div class="nutrition-card">
-                {st.session_state.meal_plan_response}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="meal-plan-section">
+      <div class="custom-header" style="padding: 1rem; margin-bottom: 1.5rem;">
+        <h3 style="color: var(--text-color);">🥗 Your Personalized Nutrition Plan</h3>
+      </div>
+      <div class="nutrition-card" style="color: var(--text-color);">
+        {st.session_state.meal_plan_response}
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
         
         # SMS Resend Option
         if twilio_client:
