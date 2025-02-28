@@ -2,15 +2,17 @@
   --primary-color: #2ecc71;
   --secondary-color: #27ae60;
   --accent-color: #f1c40f;
-  --background-color: #f9f9f9;
-  --text-color: #2c3e50;
-  --card-bg: #ffffff;
+  --background-color: #ffffff;
+  --text-color: #2d3436;
+  --card-bg: #f8f9fa;
+  --dark-text: #2c3e50;
 }
 
 /* Base styles */
 .stApp {
   background: var(--background-color);
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: var(--dark-text);
 }
 
 /* Header styles */
@@ -25,9 +27,13 @@
   animation: fadeIn 1s ease-in;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-20px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Text visibility fixes */
+.stMarkdown, .nutrition-card, .meal-plan-section, .graph-container {
+  color: var(--dark-text) !important;
+}
+
+.stTextInput>div>div>input, .stNumberInput>div>div>input {
+  color: var(--dark-text) !important;
 }
 
 /* Food card styles */
@@ -38,65 +44,63 @@
   margin: 1rem 0;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   transition: transform 0.3s ease;
-}
-
-.nutrition-card:hover {
-  transform: translateY(-5px);
+  color: var(--dark-text);
 }
 
 /* Meal plan section */
 .meal-plan-section {
-  background: white;
+  background: var(--card-bg);
   border-radius: 15px;
   padding: 2rem;
   margin: 2rem 0;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  color: var(--dark-text);
 }
 
-/* Custom button styles */
-.stButton>button {
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 25px;
-  padding: 0.8rem 2rem;
-  font-size: 1rem;
-  transition: all 0.3s ease;
+/* Graph container */
+.graph-container {
+  background: var(--card-bg);
+  border-radius: 15px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  color: var(--dark-text);
 }
 
-.stButton>button:hover {
-  background: var(--secondary-color);
-  transform: scale(1.05);
+/* Radio buttons */
+.stRadio label {
+  color: var(--dark-text) !important;
+}
+
+.stRadio input:checked + label {
+  color: white !important;
 }
 
 /* Form styling */
 .stForm {
   background: var(--card-bg);
-  border-radius: 15px;
-  padding: 2rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  color: var(--dark-text);
 }
 
-/* Nutrient graph container */
-.graph-container {
-  background: white;
-  border-radius: 15px;
-  padding: 1.5rem;
-  margin: 1rem 0;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+/* Table text color */
+.stTable {
+  color: var(--dark-text) !important;
 }
 
-/* Mobile responsive */
+/* Mobile responsive adjustments */
 @media (max-width: 768px) {
   .custom-header h1 {
     font-size: 1.8rem;
+    color: white !important;
   }
   
   .nutrition-card {
     margin: 0.5rem 0;
+    padding: 1rem;
   }
 }
 
+/* Rest of your existing animations and other styles remain the same */
 /* Animation classes */
 @keyframes pulse {
   0% { transform: scale(1); }
