@@ -490,7 +490,7 @@ Format with markdown headers and emojis.
                         st.error("Failed to generate meal plan. Please try again.")
 
     if st.session_state.meal_plan_response:
-    st.markdown(f"""
+        st.markdown(f"""
     <div class="meal-plan-section">
       <div class="custom-header" style="padding: 1rem; margin-bottom: 1.5rem;">
         <h3 style="color: var(--text-color);">🥗 Your Personalized Nutrition Plan</h3>
