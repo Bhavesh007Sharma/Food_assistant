@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from together import Together
 from pinecone import Pinecone
 from pyzbar.pyzbar import decode
+from twilio.rest import Client
 
 # LangChain imports
 from langchain.llms.base import LLM
@@ -28,6 +29,14 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 USDA_INDEX_NAME = os.getenv("USDA_INDEX_NAME")
 NUTRIENT_INDEX_NAME = os.getenv("NUTRIENT_INDEX_NAME")
 CHEM_INDEX_NAME = os.getenv("CHEM_INDEX_NAME")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
+
+# Initialize Twilio client
+twilio_client = None
+if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
+    twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 ####################################
 # Initialize Pinecone indexes
@@ -233,7 +242,21 @@ if 'meal_plan_response' not in st.session_state:
 st.markdown(
     """
     <style>
-    /* Existing styles remain the same */
+    .main {
+        max-width: 800px;
+        padding: 2rem;
+        margin: auto;
+    }
+    .header-text {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .stButton>button {
+        background-color: #4CAF50;
+        color: white;
+        border-radius: 5px;
+        padding: 0.5rem 1rem;
+    }
     </style>
     """,
     unsafe_allow_html=True
@@ -405,6 +428,11 @@ if st.session_state.show_meal_form:
             "Favorite Cuisines:",
             ["Italian", "Mexican", "Asian", "Mediterranean", "American", "Indian", "Middle Eastern"]
         )
+        
+        # SMS Notification Section
+        send_sms = st.checkbox("📲 Send meal plan via SMS")
+        phone_number = st.text_input("Phone number (international format):") if send_sms else None
+        
         submit_button = st.form_submit_button('Generate Meal Plan')
 
         if submit_button:
@@ -414,7 +442,6 @@ Create a personalized meal plan with:
 - Preferences: {', '.join(diet_preferences)}
 - Restrictions: {', '.join(dietary_restrictions)}
 - Cuisines: {', '.join(favorite_cuisines)}
-
 Include for each meal:
 1. Nutritional breakdown
 2. Ingredients list
@@ -426,12 +453,53 @@ Format with markdown headers and emojis.
                 meal_plan_response = together_chat(prompt)
                 if not meal_plan_response.startswith("Error"):
                     st.session_state.meal_plan_response = meal_plan_response
+                    
+                    # Send SMS if requested
+                    if send_sms and phone_number and twilio_client:
+                        try:
+                            message = twilio_client.messages.create(
+                                body=f"Here's your meal plan!\n\n{meal_plan_response[:1600]}",
+                                from_=TWILIO_PHONE_NUMBER,
+                                to=phone_number
+                            )
+                            st.success("📱 Meal plan sent to your phone!")
+                        except Exception as e:
+                            st.error(f"SMS failed: {str(e)}")
                 else:
                     st.error("Failed to generate meal plan. Please try again.")
 
 if st.session_state.meal_plan_response:
-    st.markdown("### 🥗 Your Personalized Nutrition Plan")
+    # Friendly Message Header
+    st.markdown(f"""
+    <div style="padding:20px; background:#f8f9fa; border-radius:10px; margin-bottom:25px;">
+        <h3 style="color:#2d3436;">🍎 Your Personalized Nutrition Plan 🥑</h3>
+        <p style="color:#636e72;">
+        Here's your custom meal plan based on:<br>
+        • {st.session_state.get('calorie_goal', 2000)} calorie goal<br>
+        • Diet preferences: {', '.join(st.session_state.get('diet_preferences', ['None']))}<br>
+        • Dietary restrictions: {', '.join(st.session_state.get('dietary_restrictions', ['None']))}
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Display Meal Plan
     st.markdown(st.session_state.meal_plan_response)
+    
+    # SMS Resend Option
+    if twilio_client:
+        with st.expander("📲 Resend to Phone"):
+            resend_phone = st.text_input("Enter phone number:", key="resend_phone")
+            if st.button("Resend Meal Plan"):
+                try:
+                    twilio_client.messages.create(
+                        body=f"Meal Plan Reminder:\n\n{st.session_state.meal_plan_response[:1600]}",
+                        from_=TWILIO_PHONE_NUMBER,
+                        to=resend_phone
+                    )
+                    st.success("✅ Resent to your phone!")
+                except Exception as e:
+                    st.error(f"Resend failed: {str(e)}")
+
     if st.button("Clear Plan"):
         st.session_state.meal_plan_response = None
         st.session_state.show_meal_form = False
