@@ -24,6 +24,14 @@ from typing import List, Any, Dict
 # --- Load environment variables --
 load_dotenv()
 
+# --- Custom CSS Loader ---
+def load_css():
+    with open("assets/css/style.css") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+load_css()
+
+# --- Environment Variables ---
 TOGETHER_API_KEY = os.getenv("SAMBANOVA_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 USDA_INDEX_NAME = os.getenv("USDA_INDEX_NAME")
@@ -237,206 +245,219 @@ if 'meal_plan_response' not in st.session_state:
     st.session_state.meal_plan_response = None
 
 ####################################
-# UI Styling
-####################################
-st.markdown(
-    """
-    <style>
-    .main {
-        max-width: 800px;
-        padding: 2rem;
-        margin: auto;
-    }
-    .header-text {
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .stButton>button {
-        background-color: #4CAF50;
-        color: white;
-        border-radius: 5px;
-        padding: 0.5rem 1rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-####################################
 # App Interface
 ####################################
-st.markdown('<div class="main">', unsafe_allow_html=True)
-st.markdown(
-    """
-    <div class="header-text">
-      <h1 style="color:#FEE440;">Nutritional Insights & Food Safety Assistant</h1>
-      <p>Discover detailed USDA food data, nutrient insights, chemical analysis, and healthy recipe suggestions</p>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+# --- Modern Header ---
+st.markdown("""
+<div class="custom-header pulse-animation">
+  <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;">
+    <img src="https://cdn-icons-png.flaticon.com/512/3075/3075977.png" width="60" alt="Nutrition Icon">
+    <h1>NutriVision Pro</h1>
+  </div>
+  <p style="margin-top: 1rem;">Your Smart Nutritional Analysis Platform</p>
+</div>
+""", unsafe_allow_html=True)
 
 ####################################
 # Chat Interface
 ####################################
-input_mode = st.radio("Select input mode:", ["Text", "Barcode Image"])
-query_input = ""
-if input_mode == "Text":
-    query_input = st.chat_input("Enter your query:")
-else:
-    uploaded_file = st.file_uploader("Upload a barcode image", type=["png", "jpg", "jpeg"])
-    if uploaded_file is not None:
-        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-        st.image(image, caption="Uploaded Barcode Image", use_column_width=True)
-        barcodes = decode(image)
-        if barcodes:
-            barcode_data = barcodes[0].data.decode("utf-8")
-            st.success(f"Decoded Barcode: {barcode_data}")
-            query_input = barcode_data
-        else:
-            st.error("No barcode detected. Please try again.")
-
-query_type = st.selectbox("Select query type:", ["USDA Database Query", "Home Made Food Analysis"])
-
-if query_input:
-    st.session_state.messages.append({"role": "user", "content": query_input})
-    if query_type == "USDA Database Query":
-        result = st.session_state.chat_chain({"question": query_input})
-        answer = result.get("answer", "I'm sorry, I could not generate an answer.")
-        st.session_state.messages.append({"role": "assistant", "content": answer})
-    elif query_type == "Home Made Food Analysis":
-        st.info("Fetching data from CalorieNinjas API...")
-        api_url = 'https://api.calorieninjas.com/v1/nutrition?query='
-        headers = {'X-Api-Key': 'xZy/uYgnYZyoJAiAAl1obw==FG9eY7kclEvmkgMY'}
-        response = requests.get(api_url + query_input, headers=headers)
-
-        if response.status_code == requests.codes.ok:
-            data = response.json()
-            items = data.get("items", [])
-            if items:
-                nutrient_keys = ["calories", "serving_size_g", "fat_total_g", "fat_saturated_g",
-                               "protein_g", "sodium_mg", "potassium_mg", "cholesterol_mg",
-                               "carbohydrates_total_g", "fiber_g", "sugar_g"]
-                plot_data = []
-                for item in items:
-                    for key in nutrient_keys:
-                        plot_data.append({
-                            "Food": item.get("name", "Unknown"),
-                            "Nutrient": key,
-                            "Value": item.get(key, 0)
-                        })
-                df_plot = pd.DataFrame(plot_data)
-                fig2 = px.bar(df_plot, x="Nutrient", y="Value", color="Food", barmode="group",
-                              title="Nutrient Breakdown for Home Made Food Items")
-                st.plotly_chart(fig2)
-
-                radar_fig = go.Figure()
-                selected_nutrients = ["calories", "protein_g", "fat_total_g", "carbohydrates_total_g", "fiber_g"]
-                for item in items:
-                    food_name = item.get("name", "Unknown")
-                    values = [item.get(nutr, 0) for nutr in selected_nutrients]
-                    values += [values[0]]
-                    radar_fig.add_trace(go.Scatterpolar(
-                        r=values,
-                        theta=selected_nutrients + [selected_nutrients[0]],
-                        fill='toself',
-                        name=food_name
-                    ))
-                radar_fig.update_layout(
-                    polar=dict(
-                        radialaxis=dict(visible=True)
-                    ),
-                    showlegend=True,
-                    title="Radar Chart: Nutrient Comparison"
-                )
-                st.plotly_chart(radar_fig)
+with st.container():
+    st.markdown("### 🔍 Food Analysis Interface")
+    input_mode = st.radio("Select input mode:", ["Text", "Barcode Image"])
+    query_input = ""
+    
+    if input_mode == "Text":
+        query_input = st.chat_input("Enter your query:")
+    else:
+        uploaded_file = st.file_uploader("Upload a barcode image", type=["png", "jpg", "jpeg"])
+        if uploaded_file is not None:
+            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+            image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+            st.image(image, caption="Uploaded Barcode Image", use_column_width=True)
+            barcodes = decode(image)
+            if barcodes:
+                barcode_data = barcodes[0].data.decode("utf-8")
+                st.success(f"Decoded Barcode: {barcode_data}")
+                query_input = barcode_data
             else:
-                st.error("No items found in API response.")
+                st.error("No barcode detected. Please try again.")
 
-            prompt = f"""
+    query_type = st.selectbox("Select query type:", ["USDA Database Query", "Home Made Food Analysis"])
+
+    if query_input:
+        st.session_state.messages.append({"role": "user", "content": query_input})
+        if query_type == "USDA Database Query":
+            result = st.session_state.chat_chain({"question": query_input})
+            answer = result.get("answer", "I'm sorry, I could not generate an answer.")
+            st.session_state.messages.append({"role": "assistant", "content": answer})
+        elif query_type == "Home Made Food Analysis":
+            with st.spinner("🔍 Analyzing nutritional content..."):
+                api_url = 'https://api.calorieninjas.com/v1/nutrition?query='
+                headers = {'X-Api-Key': 'xZy/uYgnYZyoJAiAAl1obw==FG9eY7kclEvmkgMY'}
+                response = requests.get(api_url + query_input, headers=headers)
+
+                if response.status_code == requests.codes.ok:
+                    data = response.json()
+                    items = data.get("items", [])
+                    if items:
+                        with st.container():
+                            st.markdown("### 📊 Nutritional Breakdown")
+                            nutrient_keys = ["calories", "serving_size_g", "fat_total_g", "fat_saturated_g",
+                                          "protein_g", "sodium_mg", "potassium_mg", "cholesterol_mg",
+                                          "carbohydrates_total_g", "fiber_g", "sugar_g"]
+                            plot_data = []
+                            for item in items:
+                                for key in nutrient_keys:
+                                    plot_data.append({
+                                        "Food": item.get("name", "Unknown"),
+                                        "Nutrient": key,
+                                        "Value": item.get(key, 0)
+                                    })
+                            df_plot = pd.DataFrame(plot_data)
+                            
+                            st.markdown("""
+                            <div class="graph-container">
+                                <h4>Macronutrient Distribution</h4>
+                            """, unsafe_allow_html=True)
+                            fig2 = px.bar(df_plot, x="Nutrient", y="Value", color="Food", barmode="group",
+                                        title="Nutrient Breakdown for Home Made Food Items")
+                            st.plotly_chart(fig2)
+                            st.markdown("</div>", unsafe_allow_html=True)
+
+                            st.markdown("""
+                            <div class="graph-container">
+                                <h4>Nutrient Comparison Radar</h4>
+                            """, unsafe_allow_html=True)
+                            radar_fig = go.Figure()
+                            selected_nutrients = ["calories", "protein_g", "fat_total_g", "carbohydrates_total_g", "fiber_g"]
+                            for item in items:
+                                food_name = item.get("name", "Unknown")
+                                values = [item.get(nutr, 0) for nutr in selected_nutrients]
+                                values += [values[0]]
+                                radar_fig.add_trace(go.Scatterpolar(
+                                    r=values,
+                                    theta=selected_nutrients + [selected_nutrients[0]],
+                                    fill='toself',
+                                    name=food_name
+                                ))
+                            radar_fig.update_layout(
+                                polar=dict(
+                                    radialaxis=dict(visible=True)
+                                ),
+                                showlegend=True,
+                                title="Radar Chart: Nutrient Comparison"
+                            )
+                            st.plotly_chart(radar_fig)
+                            st.markdown("</div>", unsafe_allow_html=True)
+                    else:
+                        st.error("No items found in API response.")
+
+                    prompt = f"""
 You are a nutrition and fitness expert. Based on:
 {json.dumps(items, indent=2)}
 Provide:
 - Exercise plan with calorie requirements
 - Healthy recipe with step-by-step instructions
 Format in markdown with headings and bullet points.
-            """
-            llm_response = together_chat(prompt)
-            st.markdown(llm_response)
-        else:
-            st.error(f"Error: {response.status_code} {response.text}")
+                    """
+                    llm_response = together_chat(prompt)
+                    st.markdown(f"""
+                    <div class="nutrition-card">
+                        {llm_response}
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.error(f"Error: {response.status_code} {response.text}")
 
-for msg in st.session_state.messages:
-    if msg["role"] == "assistant":
-        st.chat_message("assistant", avatar="🤖").write(msg["content"])
-    else:
-        st.chat_message("user", avatar="🙂").write(msg["content"])
+    for msg in st.session_state.messages:
+        if msg["role"] == "assistant":
+            st.chat_message("assistant", avatar="🤖").write(msg["content"])
+        else:
+            st.chat_message("user", avatar="🙂").write(msg["content"])
 
 ####################################
-# Nutrient Graph Button
+# Nutrient Graph Section
 ####################################
 if "nutrient_values" in st.session_state and st.button("Generate Nutrient Graph"):
     nutrient_values = st.session_state["nutrient_values"]
     if nutrient_values:
-        df_chart = pd.DataFrame(list(nutrient_values.items()), columns=["Nutrient", "Value"]).set_index("Nutrient")
-        st.subheader("Nutrient Bar Chart")
-        st.bar_chart(df_chart)
+        with st.container():
+            st.markdown("### 📈 Nutrient Visualization")
+            
+            st.markdown("""
+            <div class="graph-container">
+                <h4>Nutrient Composition</h4>
+            """, unsafe_allow_html=True)
+            df_chart = pd.DataFrame(list(nutrient_values.items()), columns=["Nutrient", "Value"]).set_index("Nutrient")
+            st.bar_chart(df_chart)
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        who_recommendations = {
-            "CARBOHYDRATE, BY DIFFERENCE (G)": 275,
-            "FIBER, TOTAL DIETARY (G)": 25,
-            "PROTEIN (G)": 50,
-            "TOTAL SUGARS (G)": 25,
-            "TOTAL LIPID (FAT) (G)": 70,
-            "FATTY ACIDS, TOTAL SATURATED (G)": 20
-        }
-        comp_data = []
-        for nutrient, value in nutrient_values.items():
-            who_value = who_recommendations.get(nutrient, None)
-            if who_value is not None:
-                comp_data.append({"Nutrient": nutrient, "Value": value, "Type": "Product"})
-                comp_data.append({"Nutrient": nutrient, "Value": who_value, "Type": "WHO Recommended"})
-        if comp_data:
-            df_comp = pd.DataFrame(comp_data)
-            fig = px.bar(
-                df_comp, x="Nutrient", y="Value", color="Type",
-                barmode="group", title="Product vs WHO Recommendations"
-            )
-            st.plotly_chart(fig)
+            who_recommendations = {
+                "CARBOHYDRATE, BY DIFFERENCE (G)": 275,
+                "FIBER, TOTAL DIETARY (G)": 25,
+                "PROTEIN (G)": 50,
+                "TOTAL SUGARS (G)": 25,
+                "TOTAL LIPID (FAT) (G)": 70,
+                "FATTY ACIDS, TOTAL SATURATED (G)": 20
+            }
+            comp_data = []
+            for nutrient, value in nutrient_values.items():
+                who_value = who_recommendations.get(nutrient, None)
+                if who_value is not None:
+                    comp_data.append({"Nutrient": nutrient, "Value": value, "Type": "Product"})
+                    comp_data.append({"Nutrient": nutrient, "Value": who_value, "Type": "WHO Recommended"})
+            if comp_data:
+                st.markdown("""
+                <div class="graph-container">
+                    <h4>Nutritional Guidelines Comparison</h4>
+                """, unsafe_allow_html=True)
+                df_comp = pd.DataFrame(comp_data)
+                fig = px.bar(
+                    df_comp, x="Nutrient", y="Value", color="Type",
+                    barmode="group", title="Product vs WHO Recommendations"
+                )
+                st.plotly_chart(fig)
+                st.markdown("</div>", unsafe_allow_html=True)
 
 ####################################
 # Personalized Meal Plan Section
 ####################################
-if st.button("Personalize Your Meal"):
-    st.session_state.show_meal_form = True
-    st.session_state.meal_plan_response = None
+with st.container():
+    st.markdown("### 🍽️ Personalized Meal Planning")
+    if st.button("Create Custom Meal Plan"):
+        st.session_state.show_meal_form = True
+        st.session_state.meal_plan_response = None
 
-if st.session_state.show_meal_form:
-    with st.form(key='meal_preferences'):
-        st.subheader("🍽️ Meal Preferences")
-        calorie_goal = st.number_input("Daily Calorie Goal:", min_value=500, max_value=5000, value=2000)
-        diet_preferences = st.multiselect(
-            "Diet Preferences:",
-            ["Vegetarian", "Vegan", "Keto", "Paleo", "Mediterranean", "Low-Carb", "Gluten-Free"]
-        )
-        dietary_restrictions = st.multiselect(
-            "Dietary Restrictions:",
-            ["Dairy-Free", "Nut Allergy", "Shellfish Allergy", "Soy-Free", "Halal", "Kosher"]
-        )
-        favorite_cuisines = st.multiselect(
-            "Favorite Cuisines:",
-            ["Italian", "Mexican", "Asian", "Mediterranean", "American", "Indian", "Middle Eastern"]
-        )
-        
-        # SMS Notification Section
-        send_sms = st.checkbox("📲 Send meal plan via SMS")
-        phone_number = st.text_input("Phone number (international format):") if send_sms else None
-        
-        submit_button = st.form_submit_button('Generate Meal Plan')
-
-        if submit_button:
-            prompt = f"""
+    if st.session_state.show_meal_form:
+        with st.form(key='meal_preferences'):
+            st.markdown("#### 🎯 Set Your Preferences")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                calorie_goal = st.number_input("Daily Calorie Goal:", min_value=500, max_value=5000, value=2000)
+                diet_preferences = st.multiselect(
+                    "Diet Preferences:",
+                    ["Vegetarian", "Vegan", "Keto", "Paleo", "Mediterranean", "Low-Carb", "Gluten-Free"]
+                )
+                
+            with col2:
+                dietary_restrictions = st.multiselect(
+                    "Dietary Restrictions:",
+                    ["Dairy-Free", "Nut Allergy", "Shellfish Allergy", "Soy-Free", "Halal", "Kosher"]
+                )
+                favorite_cuisines = st.multiselect(
+                    "Favorite Cuisines:",
+                    ["Italian", "Mexican", "Asian", "Mediterranean", "American", "Indian", "Middle Eastern"]
+                )
+            
+            # SMS Notification
+            if twilio_client:
+                st.markdown("#### 📱 Notification Options")
+                send_sms = st.checkbox("Send meal plan via SMS")
+                phone_number = st.text_input("Phone number (international format):") if send_sms else None
+            
+            if st.form_submit_button('Generate Meal Plan'):
+                prompt = f"""
 Create a personalized meal plan with:
 - Calorie target: {calorie_goal}
 - Preferences: {', '.join(diet_preferences)}
@@ -448,60 +469,53 @@ Include for each meal:
 3. Preparation steps
 4. Estimated cooking time
 Format with markdown headers and emojis.
-            """
-            with st.spinner("🍳 Crafting your perfect meal plan..."):
-                meal_plan_response = together_chat(prompt)
-                if not meal_plan_response.startswith("Error"):
-                    st.session_state.meal_plan_response = meal_plan_response
-                    
-                    # Send SMS if requested
-                    if send_sms and phone_number and twilio_client:
-                        try:
-                            message = twilio_client.messages.create(
-                                body=f"Here's your meal plan!\n\n{meal_plan_response[:1600]}",
-                                from_=TWILIO_PHONE_NUMBER,
-                                to=phone_number
-                            )
-                            st.success("📱 Meal plan sent to your phone!")
-                        except Exception as e:
-                            st.error(f"SMS failed: {str(e)}")
-                else:
-                    st.error("Failed to generate meal plan. Please try again.")
+                """
+                with st.spinner("🍳 Crafting your perfect meal plan..."):
+                    meal_plan_response = together_chat(prompt)
+                    if not meal_plan_response.startswith("Error"):
+                        st.session_state.meal_plan_response = meal_plan_response
+                        
+                        # Send SMS
+                        if send_sms and phone_number and twilio_client:
+                            try:
+                                message = twilio_client.messages.create(
+                                    body=f"Here's your meal plan!\n\n{meal_plan_response[:1600]}",
+                                    from_=TWILIO_PHONE_NUMBER,
+                                    to=phone_number
+                                )
+                                st.success("📱 Meal plan sent to your phone!")
+                            except Exception as e:
+                                st.error(f"SMS failed: {str(e)}")
+                    else:
+                        st.error("Failed to generate meal plan. Please try again.")
 
-if st.session_state.meal_plan_response:
-    # Friendly Message Header
-    st.markdown(f"""
-    <div style="padding:20px; background:#f8f9fa; border-radius:10px; margin-bottom:25px;">
-        <h3 style="color:#2d3436;">🍎 Your Personalized Nutrition Plan 🥑</h3>
-        <p style="color:#636e72;">
-        Here's your custom meal plan based on:<br>
-        • {st.session_state.get('calorie_goal', 2000)} calorie goal<br>
-        • Diet preferences: {', '.join(st.session_state.get('diet_preferences', ['None']))}<br>
-        • Dietary restrictions: {', '.join(st.session_state.get('dietary_restrictions', ['None']))}
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Display Meal Plan
-    st.markdown(st.session_state.meal_plan_response)
-    
-    # SMS Resend Option
-    if twilio_client:
-        with st.expander("📲 Resend to Phone"):
-            resend_phone = st.text_input("Enter phone number:", key="resend_phone")
-            if st.button("Resend Meal Plan"):
-                try:
-                    twilio_client.messages.create(
-                        body=f"Meal Plan Reminder:\n\n{st.session_state.meal_plan_response[:1600]}",
-                        from_=TWILIO_PHONE_NUMBER,
-                        to=resend_phone
-                    )
-                    st.success("✅ Resent to your phone!")
-                except Exception as e:
-                    st.error(f"Resend failed: {str(e)}")
+    if st.session_state.meal_plan_response:
+        st.markdown(f"""
+        <div class="meal-plan-section">
+            <div class="custom-header" style="padding: 1rem; margin-bottom: 1.5rem;">
+                <h3>🥗 Your Personalized Nutrition Plan</h3>
+            </div>
+            <div class="nutrition-card">
+                {st.session_state.meal_plan_response}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # SMS Resend Option
+        if twilio_client:
+            with st.expander("📲 Resend to Phone"):
+                resend_phone = st.text_input("Enter phone number:", key="resend_phone")
+                if st.button("Resend Meal Plan"):
+                    try:
+                        twilio_client.messages.create(
+                            body=f"Meal Plan Reminder:\n\n{st.session_state.meal_plan_response[:1600]}",
+                            from_=TWILIO_PHONE_NUMBER,
+                            to=resend_phone
+                        )
+                        st.success("✅ Resent to your phone!")
+                    except Exception as e:
+                        st.error(f"Resend failed: {str(e)}")
 
-    if st.button("Clear Plan"):
-        st.session_state.meal_plan_response = None
-        st.session_state.show_meal_form = False
-
-st.markdown("</div>", unsafe_allow_html=True)
+        if st.button("Clear Plan"):
+            st.session_state.meal_plan_response = None
+            st.session_state.show_meal_form = False
