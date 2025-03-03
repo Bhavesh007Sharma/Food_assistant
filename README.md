@@ -53,3 +53,6 @@ Explore NutriVision Pro live on Hugging Face Spaces: [NutriVision Pro Live Demo]
 
 # Tags
 - #AI #NutritionTech #FoodSafety #LLM #HealthTech #Innovation #FoodScience #MealPlanning #OpenSource
+
+
+https://github.com/user-attachments/assets/1023185c-c7c0-4fc5-9631-f8fc41c4f532
